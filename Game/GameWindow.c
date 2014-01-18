@@ -410,14 +410,11 @@ void GameWindowRenderMap(GameWindow_t *window)
             x < (window->WindowWidth - 2) && (window->MapX + x) < MAP_WIDTH;
             x++)
         {
-            
             if(j++ >= pgm_read_byte(&(mapTiles[i].Length)))
             {
                 j = 0;
                 i++;
             }
-
-
 
             GameWindowRenderTile(pgm_read_byte(&(mapTiles[i].TileType)));
         }
@@ -470,30 +467,39 @@ void GameWindowRenderBorders(GameWindow_t *window)
 
 void GameWindowRenderCursor(GameWindow_t *window)
 {
-    // Rows and columns are 1-indexed
-    int16_t cursorX = window->CursorX - window->MapX + 1;
-    int16_t cursorY = window->CursorY - window->MapY + 1;
+    int16_t cursorX = window->CursorX - window->MapX;
+    int16_t cursorY = window->CursorY - window->MapY;
 
-    if(cursorX < 1)
+    if(cursorX < 0)
     {
-        cursorX = 1;
+        cursorX = 0;
     }
     else if(cursorX > (window->WindowWidth - BORDER_WIDTH))
     {
         cursorX = window->WindowWidth;
     }
-
-    if(cursorY < 1)
+    else
     {
-        cursorY = 1;
+        cursorX += BORDER_WIDTH;
+    }
+
+    if(cursorY < 0)
+    {
+        cursorY = 0;
     }
     else if(cursorY > (window->WindowHeight - BORDER_WIDTH))
     {
         cursorY = window->WindowHeight;
     }
+    else
+    {
+        cursorY += BORDER_WIDTH;
+    }
     
     GameWindowSetBgColor(TermColor_Black);
     GameWindowSetFgColor(TermColor_White);
-    GameWindowCursorMove(cursorX, cursorY);
+    
+    // Rows and columns are 1-indexed
+    GameWindowCursorMove(cursorX + 1, cursorY + 1);
     GameWindowCursorShow();
 }
