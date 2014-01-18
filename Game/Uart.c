@@ -111,14 +111,11 @@ void __attribute__((signal)) USART_TX_vect(void)
 uint8_t UartReceiveByte(void)
 {
     bool interruptsState = DisableInterrupts();
-    bool isEmpty = CircularBufferIsEmpty(&rxBuf);
     
-    EnableInterrupts(interruptsState);
-    while(isEmpty)
+    while(CircularBufferIsEmpty(&rxBuf))
     {
-        interruptsState = DisableInterrupts();
-        isEmpty = CircularBufferIsEmpty(&rxBuf);
-        EnableInterrupts(interruptsState);
+        EnableInterrupts(TRUE);
+        DisableInterrupts();
     }
     
     interruptsState = DisableInterrupts();

@@ -14,7 +14,7 @@
 #include "Uart.h"
 #include "GameWindow.h"
 
-void __attribute__((signal)) TIMER0_COMPA_vect(void)
+void __attribute__((signal)) TIMER0_OVF_vect(void)
 {
     GameWindowRequestSize();
 }
@@ -31,16 +31,15 @@ int main(void)
 
     // Configure a ~60Hz interrupt
     TCCR0A = (1 << WGM01);
-    OCR0A= 0xFF;
     TCCR0B = (1 << CS02) | (1 << CS00);
-    TIMSK0 = (1 << OCIE0A);
+    TIMSK0 = (1 << TOIE0);
     
     while(1)
     {
-        TIMSK0 &= ~(1 << OCIE0A);
+        TIMSK0 &= ~(1 << TOIE0);
         GameWindowRenderScreen(&gameWindow);
         GameWindowParseInput(&gameWindow);
-        TIMSK0 |= (1 << OCIE0A);
+        TIMSK0 |= (1 << TOIE0);
     }
     
     return 0;
