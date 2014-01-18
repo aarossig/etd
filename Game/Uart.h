@@ -17,7 +17,7 @@
 #include "CircularBuffer.h"
 #include "Bool.h"
 
-#define BAUD 500000UL
+#define BAUD 115200UL
 
 void UartInit(void);
 

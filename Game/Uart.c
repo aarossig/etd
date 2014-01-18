@@ -71,8 +71,8 @@ void UartTransmitByte(uint8_t b)
     
     if(!transmitting)
     {
-        UDR0 = b;
         transmitting = TRUE;
+        UDR0 = b;
         EnableInterrupts(interruptsState);
     }
     else

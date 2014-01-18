@@ -11,3 +11,10 @@ This has been tested in gnome-terminal using miniterm.py. Minicom attempts to
 emulate a VT102 and ignores some non-critical escape sequences.
 
 It has also been tested in Putty on Windows.
+
+## Supporting Documentation
+
+The following articles have been useful for developing this application.
+
+* Terminal Escape Codes
+    * http://invisible-island.net/xterm/ctlseqs/ctlseqs.html

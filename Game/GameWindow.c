@@ -102,6 +102,26 @@ void GameWindowCursorHome()
 }
 
 /*
+ * Moves the terminal cursor to the position x, y
+ */
+void GameWindowCursorMove(uint16_t x, uint16_t y)
+{
+    char buf[5] = { 0 };
+
+    UartPrintP(CS_CCI, 2);
+
+    sprintf(buf, "%d", y);
+    UartPrint(buf, strlen(buf));
+
+    UartTransmitByte(';');
+
+    sprintf(buf, "%d", x);
+    UartPrint(buf, strlen(buf));
+    
+    UartTransmitByte('H');
+}
+
+/*
  * Hides the terminal cursor
  */
 void GameWindowCursorHide()
@@ -110,10 +130,46 @@ void GameWindowCursorHide()
     UartPrintP(CS_HideCursor, 4);
 }
 
+/*
+ * Instructs the terminal emulator to use an alternate buffer with no scrollback
+ */
 void GameWindowUseAlternateBuffer()
 {
     UartPrintP(CS_CCI, 2);
     UartPrintP(CS_UseAlternateBuffer, 4);
+}
+
+/*
+ * Changes the color of the terminal
+ */
+void GameWindowSetColor(TermColor_t bgColor, TermColor_t fgColor)
+{
+    static TermColor_t prevBgColor = -1;
+    static TermColor_t prevFgColor = -1;
+    
+    if(bgColor != prevBgColor
+        || fgColor != prevFgColor)
+    {
+        UartPrintP(CS_CCI, 2);
+
+        UartTransmitByte('0');
+        UartTransmitByte(';');
+
+        char buf[5] = { 0 };
+        
+        sprintf(buf, "%d", 30 + fgColor);
+        UartPrint(buf, strlen(buf));
+        
+        UartTransmitByte(';');
+        
+        sprintf(buf, "%d", 40 + bgColor);
+        UartPrint(buf, strlen(buf));
+        
+        UartTransmitByte('m');
+
+        prevBgColor = bgColor;
+        prevFgColor = fgColor;
+    }
 }
 
 /*
@@ -200,12 +256,14 @@ void GameWindowParseInput(GameWindow_t *window)
 
 void GameWindowRenderScreen(GameWindow_t *window)
 {
-    GameWindowCursorHome();
+    GameWindowRequestSize();
     
-    for(uint16_t y = 0;
-            y < window->WindowHeight && (window->MapY + y) < MAP_HEIGHT;
+    for(uint16_t y = 1;
+            y < (window->WindowHeight - 1) && (window->MapY + y) < MAP_HEIGHT;
             y++)
     {
+        GameWindowCursorMove(2, y + 1);
+
         uint16_t i = 0;
         uint8_t j = 0;
         
@@ -220,8 +278,8 @@ void GameWindowRenderScreen(GameWindow_t *window)
         
         j = (tileNum - length);
         
-        for(uint16_t x = 0;
-            x < window->WindowWidth && (window->MapX + x) < MAP_WIDTH;
+        for(uint16_t x = 1;
+            x < (window->WindowWidth - 1) && (window->MapX + x) < MAP_WIDTH;
             x++)
         {
             if(j++ >= pgm_read_byte(&(mapTiles[i].Length)))
@@ -236,12 +294,15 @@ void GameWindowRenderScreen(GameWindow_t *window)
                     UartTransmitByte(' ');
                     break;
                 case Stone:
+                    GameWindowSetColor(TermColor_Black, TermColor_White);
                     UartTransmitByte('#');
                     break;
                 case Water:
+                    GameWindowSetColor(TermColor_Blue, TermColor_White);
                     UartTransmitByte('~');
                     break;
                 case Grass:
+                    GameWindowSetColor(TermColor_Green, TermColor_White);
                     UartTransmitByte('.');
                     break;
                 default:
