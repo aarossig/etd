@@ -72,23 +72,17 @@ void UartTransmitByte(uint8_t b)
     if(!transmitting)
     {
         transmitting = TRUE;
+        EnableInterrupts(TRUE);
         UDR0 = b;
-        EnableInterrupts(interruptsState);
     }
     else
     {
-        uint8_t isFull = CircularBufferIsFull(&txBuf);
-        
-        EnableInterrupts(interruptsState);
-        
-        while(isFull)
+        while(CircularBufferIsFull(&txBuf))
         {
-            interruptsState = DisableInterrupts();
-            isFull = CircularBufferIsFull(&txBuf);
-            EnableInterrupts(interruptsState);
+            EnableInterrupts(TRUE);
+            DisableInterrupts();
         }
-        
-        interruptsState = DisableInterrupts();
+
         CircularBufferWrite(&txBuf, b);
         EnableInterrupts(interruptsState);
     }

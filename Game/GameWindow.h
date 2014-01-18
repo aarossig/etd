@@ -60,6 +60,7 @@ void GameWindowCursorHide();
 void GameWindowUseAlternateBuffer();
 void GameWindowCursorMove(uint16_t x, uint16_t y);
 void GameWindowSetColor(TermColor_t bgColor, TermColor_t fgColor);
+void GameWindowClearScreen();
 
 MapTileType_t GameWindowGetTile(GameWindow_t *window, uint16_t x, uint16_t y);
 
