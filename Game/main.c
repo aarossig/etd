@@ -17,6 +17,7 @@
 void __attribute__((signal)) TIMER0_OVF_vect(void)
 {
     GameWindowRequestSize();
+    TCNT0 = 0;
 }
 
 GameWindow_t gameWindow;
@@ -26,7 +27,6 @@ int main(void)
     UartInit();
     
     GameWindowInit(&gameWindow);
-    GameWindowCursorHide();
     GameWindowUseAlternateBuffer();
 
     // Configure a ~60Hz interrupt

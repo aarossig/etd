@@ -11,28 +11,30 @@ const char CS_CCI[] PROGMEM = { 0x1B, 0x5B };
 const char CS_GetWindowSize[] PROGMEM = { '1', '8', 't' };
 const char CS_MoveCursor[] PROGMEM = { 'H' };
 const char CS_HideCursor[] PROGMEM = { '?', '2', '5', 'l' };
+const char CS_ShowCursor[] PROGMEM = { '?', '2', '5', 'h' };
 const char CS_ClearScreen[] PROGMEM = { '2', 'J' };
 const char CS_UseAlternateBuffer[] PROGMEM = { '?', '4', '7', 'h' };
+const char CS_SetXTermBgColor[] PROGMEM = { '4', '8', ';', '5', ';' };
+const char CS_SetXTermFgColor[] PROGMEM = { '3', '8', ';', '5', ';' };
 const char CR_LF[] PROGMEM = { '\r', '\n' };
-
-#define MAP_WIDTH 160
-#define MAP_HEIGHT 48
-#define TILE_COUNT (MAP_WIDTH * MAP_HEIGHT)
 
 #define PARAM_BUF_LEN 5
 #define PARAM_COUNT 2
 
 #define BORDER_WIDTH 1
 
+#define MAP_WIDTH 160
+#define MAP_HEIGHT 48
+
 const MapTile_t mapTiles[] PROGMEM = {{ .Length = 0xFF, .TileType = Stone },
                                       { .Length = 0xFF, .TileType = Water },
                                       { .Length = 0xFF, .TileType = Grass },
-                                      { .Length = 0xFF, .TileType = Grass },
+                                      { .Length = 0xFF, .TileType = Water },
                                       { .Length = 0xFF, .TileType = Grass },
                                       { .Length = 0xFF, .TileType = Water },
                                       { .Length = 0xFF, .TileType = Stone },
-                                      { .Length = 0xFF, .TileType = Stone },
-                                      { .Length = 0xFF, .TileType = Stone },
+                                      { .Length = 0xFF, .TileType = Water },
+                                      { .Length = 0xFF, .TileType = Water },
                                       { .Length = 0xFF, .TileType = Stone },
                                       { .Length = 0xFF, .TileType = Water },
                                       { .Length = 0xFF, .TileType = Stone },
@@ -68,6 +70,8 @@ void GameWindowInit(GameWindow_t *window)
 
     window->CursorX = (window->WindowWidth >> 1);
     window->CursorY = (window->WindowHeight >> 1);
+
+    window->Gold = DEFAULT_MONEY;
 }
 
 /*
@@ -137,6 +141,15 @@ void GameWindowCursorHide()
 }
 
 /*
+ * Shows the terminal cursor
+ */
+void GameWindowCursorShow()
+{
+    UartPrintP(CS_CCI, 2);
+    UartPrintP(CS_ShowCursor, 4);
+}
+
+/*
  * Instructs the terminal emulator to use an alternate buffer with no scrollback
  */
 void GameWindowUseAlternateBuffer()
@@ -152,35 +165,46 @@ void GameWindowClearScreen()
 }
 
 /*
- * Changes the color of the terminal
+ * Changes the foreground color of the terminal
  */
-void GameWindowSetColor(TermColor_t bgColor, TermColor_t fgColor)
+void GameWindowSetFgColor(TermColor_t color)
 {
-    static TermColor_t prevBgColor = -1;
-    static TermColor_t prevFgColor = -1;
+    static TermColor_t prevColor = 0;
     
-    if(bgColor != prevBgColor
-        || fgColor != prevFgColor)
+    if(color != prevColor)
     {
         UartPrintP(CS_CCI, 2);
-
-        UartTransmitByte('0');
-        UartTransmitByte(';');
-
+        UartPrintP(CS_SetXTermFgColor, 5);
+        
         char buf[5] = { 0 };
         
-        sprintf(buf, "%d", 30 + fgColor);
-        UartPrint(buf, strlen(buf));
-        
-        UartTransmitByte(';');
-        
-        sprintf(buf, "%d", 40 + bgColor);
+        sprintf(buf, "%d", color);
         UartPrint(buf, strlen(buf));
         
         UartTransmitByte('m');
+        prevColor = color;
+    }
+}
 
-        prevBgColor = bgColor;
-        prevFgColor = fgColor;
+/*
+ * Changes the background color of the terminal
+ */
+void GameWindowSetBgColor(TermColor_t color)
+{
+    static TermColor_t prevColor = 0;
+
+    if(color != prevColor)
+    {
+        UartPrintP(CS_CCI, 2);
+        UartPrintP(CS_SetXTermBgColor, 5);
+        
+        char buf[5] = { 0 };
+        
+        sprintf(buf, "%d", color);
+        UartPrint(buf, strlen(buf));
+        
+        UartTransmitByte('m');
+        prevColor = color;
     }
 }
 
@@ -326,31 +350,42 @@ void GameWindowParseInput(GameWindow_t *window)
 
 void GameWindowRenderScreen(GameWindow_t *window)
 {
-    static uint16_t prevWindowWidth = 0;
-    static uint16_t prevWindowHeight = 0;
-    static uint16_t prevMapX = 0;
-    static uint16_t prevMapY = 0;
-
-    bool forceRender = FALSE;
+    static GameWindow_t prevWindow = { 0 };
     
-    if(prevWindowWidth != window->WindowWidth
-        || prevWindowHeight != window->WindowHeight)
+    if(prevWindow.WindowWidth != window->WindowWidth
+        || prevWindow.WindowHeight != window->WindowHeight)
     {
-        GameWindowSetColor(TermColor_Black, TermColor_White);
+        GameWindowSetBgColor(TermColor_NearBlack);
         GameWindowClearScreen();
-        
-        prevWindowWidth = window->WindowWidth;
-        prevWindowHeight = window->WindowHeight;
-        forceRender = TRUE;
-    }
-    
-    if(prevMapX == window->MapX
-        && prevMapY == window->MapY
-        && !forceRender)
-    {
-        return;
-    }
+        GameWindowRenderMap(window);
+        GameWindowRenderBorders(window);
+        GameWindowRenderCursor(window);
 
+        prevWindow = *window;
+    }
+    else if(prevWindow.MapX != window->MapX
+        || prevWindow.MapY != window->MapY)
+    {
+        GameWindowRenderMap(window);
+        GameWindowRenderCursor(window);
+        
+        prevWindow.MapX = window->MapX;
+        prevWindow.MapY = window->MapY;
+    }
+    else if(prevWindow.CursorX != window->CursorX
+        || prevWindow.CursorY != window->CursorY)
+    {
+        GameWindowRenderCursor(window);
+
+        prevWindow.CursorX = window->CursorX;
+        prevWindow.CursorY = window->CursorY;
+    }
+}
+
+void GameWindowRenderMap(GameWindow_t *window)
+{
+    GameWindowCursorHide();
+    
     for(uint16_t y = 0;
             y < (window->WindowHeight - 2) && (window->MapY + y) < MAP_HEIGHT;
             y++)
@@ -370,41 +405,95 @@ void GameWindowRenderScreen(GameWindow_t *window)
         }
         
         j = (tileNum - length);
-        
+
         for(uint16_t x = 0;
             x < (window->WindowWidth - 2) && (window->MapX + x) < MAP_WIDTH;
             x++)
         {
+            
             if(j++ >= pgm_read_byte(&(mapTiles[i].Length)))
             {
                 j = 0;
                 i++;
             }
-            
-            switch(pgm_read_byte(&(mapTiles[i].TileType)))
-            {
-                case Empty:
-                    UartTransmitByte(' ');
-                    break;
-                case Stone:
-                    GameWindowSetColor(TermColor_Black, TermColor_White);
-                    UartTransmitByte('#');
-                    break;
-                case Water:
-                    GameWindowSetColor(TermColor_Blue, TermColor_White);
-                    UartTransmitByte('~');
-                    break;
-                case Grass:
-                    GameWindowSetColor(TermColor_Green, TermColor_White);
-                    UartTransmitByte('.');
-                    break;
-                default:
-                    UartTransmitByte('X');
-            }
+
+
+
+            GameWindowRenderTile(pgm_read_byte(&(mapTiles[i].TileType)));
         }
     }
-
-    prevMapX = window->MapX;
-    prevMapY = window->MapY;
 }
 
+void GameWindowRenderTile(MapTileType_t tile)
+{
+    switch(tile)
+    {
+        case Empty:
+            UartTransmitByte(' ');
+            break;
+        case Stone:
+            GameWindowSetBgColor(TermColor_StoneBg);
+            GameWindowSetFgColor(TermColor_StoneFg);
+            UartTransmitByte('#');
+            break;
+        case Water:
+            GameWindowSetBgColor(TermColor_WaterBg);
+            GameWindowSetFgColor(TermColor_WaterFg);
+            UartTransmitByte('~');
+            break;
+        case Grass:
+            GameWindowSetBgColor(TermColor_GrassBg);
+            GameWindowSetFgColor(TermColor_GrassFg);
+            UartTransmitByte('.');
+            break;
+        default:
+            UartTransmitByte('X');
+    }
+}
+
+void GameWindowRenderTilePosition(MapTileType_t tile, uint16_t x, uint16_t y)
+{
+    GameWindowCursorMove(x + 1, y + 1);
+    GameWindowRenderTile(tile);
+}
+
+void GameWindowRenderBorders(GameWindow_t *window)
+{
+    GameWindowCursorMove(5, 1);
+    GameWindowSetBgColor(TermColor_NearBlack);
+    GameWindowSetFgColor(TermColor_White);
+
+    char buf[17];
+    sprintf(buf, "Gold: %ld", window->Gold);
+    UartPrint(buf, strlen(buf));
+}
+
+void GameWindowRenderCursor(GameWindow_t *window)
+{
+    // Rows and columns are 1-indexed
+    int16_t cursorX = window->CursorX - window->MapX + 1;
+    int16_t cursorY = window->CursorY - window->MapY + 1;
+
+    if(cursorX < 1)
+    {
+        cursorX = 1;
+    }
+    else if(cursorX > (window->WindowWidth - BORDER_WIDTH))
+    {
+        cursorX = window->WindowWidth;
+    }
+
+    if(cursorY < 1)
+    {
+        cursorY = 1;
+    }
+    else if(cursorY > (window->WindowHeight - BORDER_WIDTH))
+    {
+        cursorY = window->WindowHeight;
+    }
+    
+    GameWindowSetBgColor(TermColor_Black);
+    GameWindowSetFgColor(TermColor_White);
+    GameWindowCursorMove(cursorX, cursorY);
+    GameWindowCursorShow();
+}

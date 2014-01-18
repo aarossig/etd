@@ -118,7 +118,6 @@ uint8_t UartReceiveByte(void)
         DisableInterrupts();
     }
     
-    interruptsState = DisableInterrupts();
     uint8_t b = CircularBufferRead(&rxBuf);
     EnableInterrupts(interruptsState);
     

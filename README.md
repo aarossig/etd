@@ -18,3 +18,5 @@ The following articles have been useful for developing this application.
 
 * Terminal Escape Codes
     * http://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+* XTerm 256 Colors
+    * http://www.calmar.ws/vim/256-xterm-24bit-rgb-color-chart.html
