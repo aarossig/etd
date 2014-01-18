@@ -32,7 +32,7 @@ void CircularBufferWrite(volatile CircularBuffer_t *buf, uint8_t elem)
     }
     
     buf->Buf[buf->Write] = elem;
-    buf->Write = (buf->Write == buf->Size - 1) ? 0 : buf->Write + 1;
+    buf->Write = (buf->Write == (buf->Size - 1)) ? 0 : buf->Write + 1;
 }
 
 /*
@@ -46,7 +46,7 @@ uint8_t CircularBufferRead(volatile CircularBuffer_t *buf)
     }
     
     uint8_t b = buf->Buf[buf->Read];
-    buf->Read = (buf->Read == buf->Size - 1) ? 0 : buf->Read + 1;
+    buf->Read = (buf->Read == (buf->Size - 1)) ? 0 : buf->Read + 1;
     return b;
 }
 

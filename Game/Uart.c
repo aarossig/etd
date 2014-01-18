@@ -30,24 +30,67 @@ void UartInit(void)
     rxBuf.Buf = rxData;
     txBuf.Size = BUF_SIZE;
     txBuf.Buf = txData;
+    
+    EnableInterrupts(TRUE);
 }
 
-/* UART Transmit **************************************************************/
+/* Helper Functions ***********************************************************/
+
+/*
+ * Prints a string out to the UART
+ */
+void UartPrint(const char *str, uint8_t len)
+{
+    for(uint8_t i = 0; i < len; i++)
+    {
+        UartTransmitByte(str[i]);
+    }
+}
+
+/*
+ * Prints a string from PROGMEM out to the UART
+ */
+void UartPrintP(const char *str, uint8_t len)
+{
+    for(uint8_t i = 0; i < len; i++)
+    {
+        UartTransmitByte(pgm_read_byte(&(str[i])));
+    }
+}
+
+/* UART Transmit *************************************************************/
+
+bool transmitting;
 
 /*
  * Sends a byte down the UART
  */
 void UartTransmitByte(uint8_t b)
 {
-    if(CircularBufferIsEmpty(&txBuf))
+    bool interruptsState = DisableInterrupts();
+    
+    if(!transmitting)
     {
-        CircularBufferWrite(&txBuf, b);
-        UDR0 = CircularBufferRead(&txBuf);
+        UDR0 = b;
+        transmitting = TRUE;
+        EnableInterrupts(interruptsState);
     }
     else
     {
-        while(CircularBufferIsFull(&txBuf));
+        uint8_t isFull = CircularBufferIsFull(&txBuf);
+        
+        EnableInterrupts(interruptsState);
+        
+        while(isFull)
+        {
+            interruptsState = DisableInterrupts();
+            isFull = CircularBufferIsFull(&txBuf);
+            EnableInterrupts(interruptsState);
+        }
+        
+        interruptsState = DisableInterrupts();
         CircularBufferWrite(&txBuf, b);
+        EnableInterrupts(interruptsState);
     }
 }
 
@@ -60,6 +103,10 @@ void __attribute__((signal)) USART_TX_vect(void)
     {
         UDR0 = CircularBufferRead(&txBuf);
     }
+    else
+    {
+        transmitting = FALSE;
+    }
 }
 
 /* Uart Receive ***************************************************************/
@@ -69,8 +116,34 @@ void __attribute__((signal)) USART_TX_vect(void)
  */
 uint8_t UartReceiveByte(void)
 {
-    while(CircularBufferIsEmpty(&rxBuf));
-    return CircularBufferRead(&rxBuf);
+    bool interruptsState = DisableInterrupts();
+    bool isEmpty = CircularBufferIsEmpty(&rxBuf);
+    
+    EnableInterrupts(interruptsState);
+    while(isEmpty)
+    {
+        interruptsState = DisableInterrupts();
+        isEmpty = CircularBufferIsEmpty(&rxBuf);
+        EnableInterrupts(interruptsState);
+    }
+    
+    interruptsState = DisableInterrupts();
+    uint8_t b = CircularBufferRead(&rxBuf);
+    EnableInterrupts(interruptsState);
+    
+    return b;
+}
+
+/*
+ * Returns how many bytes are available to be read from the buffer.
+ */
+uint8_t UartBytesToReceive()
+{
+    bool interruptsState = DisableInterrupts();
+    uint8_t bytes = rxBuf.Count;
+    EnableInterrupts(interruptsState);
+    
+    return bytes;
 }
 
 /*

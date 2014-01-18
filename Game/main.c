@@ -12,18 +12,24 @@
 #include <avr/interrupt.h>
 
 #include "Uart.h"
+#include "GameWindow.h"
+
+GameWindow_t gameWindow;
 
 int main(void)
 {
     UartInit();
-    sei();
-    
+    GameWindowInit(&gameWindow);
+    GameWindowCursorHide();
+    GameWindowUseAlternateBuffer();
+    GameWindowRenderScreen(&gameWindow);
+        
     while(1)
     {
-        uint8_t b = UartReceiveByte();
-        UartTransmitByte(b);
+        GameWindowParseInput(&gameWindow);
+        GameWindowRenderScreen(&gameWindow);
     }
     
-	return 0;
+    return 0;
 }
 

@@ -9,16 +9,25 @@
 #ifndef UART_H
 #define UART_H
 
-#include <avr/io.h>
-#include <avr/interrupt.h>
 #include <stdint.h>
+#include <avr/io.h>
+#include <avr/pgmspace.h>
 
+#include "Interrupts.h"
 #include "CircularBuffer.h"
+#include "Bool.h"
 
-#define BAUD 9600UL
+#define BAUD 500000UL
 
 void UartInit(void);
+
 void UartTransmitByte(uint8_t b);
+
 uint8_t UartReceiveByte(void);
+uint8_t UartBytesToReceive();
+
+void UartPrint(const char *str, uint8_t len);
+void UartPrintP(const char *str, uint8_t len);
+
 
 #endif
