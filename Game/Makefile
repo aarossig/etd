@@ -19,8 +19,8 @@ F_CPU = 16000000UL
 MCU = atmega328p
 
 # Compiler Configuration
-OPT = O3
-C_FLAGS = -Wall -mmcu=$(MCU) -$(OPT) -DF_CPU=$(F_CPU) -std=c99
+OPT = O1
+C_FLAGS = -Wall -mmcu=$(MCU) -$(OPT) -DF_CPU=$(F_CPU) -std=c99 -fshort-enums
 CC = avr-gcc
 
 # Programming

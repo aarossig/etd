@@ -7,7 +7,7 @@
 /*
  * Returns the status of global interrupts and then disables them
  */
-bool DisableInterrupts()
+inline bool DisableInterrupts()
 {
     bool enabled = (SREG & (1 << FLAG_I)) != 0;
     cli();
@@ -17,7 +17,7 @@ bool DisableInterrupts()
 /*
  * Enables interrupts conditionally
  */
-void EnableInterrupts(bool enabled)
+inline void EnableInterrupts(bool enabled)
 {
     if(enabled)
     {
