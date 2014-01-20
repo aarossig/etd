@@ -14,12 +14,10 @@
 #include "Uart.h"
 #include "GameWindow.h"
 
-GameWindow_t gameWindow;
-
 void __attribute__((signal)) TIMER0_OVF_vect(void)
 {
-    GameWindowRequestSize();
-    GameStep(&gameWindow);
+    TerminalRequestSize();
+    //GameStep();
     TCNT0 = 0;
 }
 
@@ -27,8 +25,7 @@ int main(void)
 {
     UartInit();
     
-    GameWindowInit(&gameWindow);
-    GameWindowUseAlternateBuffer();
+    TerminalUseAlternateBuffer();
 
     // Configure a ~60Hz interrupt
     TCCR0A = (1 << WGM01);
@@ -38,8 +35,8 @@ int main(void)
     while(1)
     {
         TIMSK0 &= ~(1 << TOIE0);
-        GameWindowRenderScreen(&gameWindow);
-        GameWindowParseInput(&gameWindow);
+        GameRender();
+        GameParseInput();
         TIMSK0 |= (1 << TOIE0);
     }
     

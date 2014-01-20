@@ -13,6 +13,17 @@ bool PointsEqual(const Point_t *p1, const Point_t *p2)
 }
 
 /*
+ * Returns a bool indicating whether the supplied points are equal.
+ * 
+ * The second point resides in program memory
+ */
+bool PointsEqualP(const Point_t *p1, const Point_t *p2)
+{
+    return (p1->X == pgm_read_byte(&(p2->X))
+        && p1->Y == pgm_read_byte(&(p2->Y)));
+}
+
+/*
  * Adds twp points together
  */
 Point_t PointAdd(const Point_t *p1, const Point_t *p2)
@@ -46,5 +57,11 @@ void PointAddDirection(Point_t *p, const Direction_t d)
 bool PointInSize(const Point_t *p, const Size_t *s)
 {
     return (p->X < s->Width && p->Y < s->Height);
+}
+
+Point_t PointFromP(const Point_t *p)
+{
+    Point_t newP = { .X = pgm_read_byte(&p->X), .Y = pgm_read_byte(&p->Y) };
+    return newP;
 }
 

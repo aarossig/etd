@@ -8,6 +8,7 @@
 #define POINT_H
 
 #include <stdint.h>
+#include <avr/pgmspace.h>
 
 #include "Bool.h"
 #include "Direction.h"
@@ -19,8 +20,10 @@ typedef struct Point_t {
 } Point_t;
 
 bool PointsEqual(const Point_t *p1, const Point_t *p2);
+bool PointsEqualP(const Point_t *p1, const Point_t *p2);
 Point_t PointAdd(const Point_t *p1, const Point_t *p2);
 void PointAddDirection(Point_t *p, const Direction_t d);
 bool PointInSize(const Point_t *p, const Size_t *s);
+Point_t PointFromP(const Point_t *p);
 
 #endif

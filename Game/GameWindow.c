@@ -1,308 +1,136 @@
 /*
- * Terminal window implementation
+ * Game Implementation
  */
 
 #include "GameWindow.h"
-
-/*
- * Control Sequences
- */
-const char CS_CCI[] PROGMEM = { 0x1B, 0x5B };
-const char CS_GetWindowSize[] PROGMEM = { '1', '8', 't' };
-const char CS_MoveCursor[] PROGMEM = { 'H' };
-const char CS_HideCursor[] PROGMEM = { '?', '2', '5', 'l' };
-const char CS_ShowCursor[] PROGMEM = { '?', '2', '5', 'h' };
-const char CS_ClearScreen[] PROGMEM = { '2', 'J' };
-const char CS_UseAlternateBuffer[] PROGMEM = { '?', '4', '7', 'h' };
-const char CS_SetXTermBgColor[] PROGMEM = { '4', '8', ';', '5', ';' };
-const char CS_SetXTermFgColor[] PROGMEM = { '3', '8', ';', '5', ';' };
-const char CR_LF[] PROGMEM = { '\r', '\n' };
-
-Size_t windowSize;
-Point_t viewPosition;
-Point_t cursorPosition;
-int32_t gold;
-uint8_t botCount;
-uint8_t level;
-
-/* Dirty Below Here... ********************************************************/
-
-#define PARAM_BUF_LEN 5
-#define PARAM_COUNT 2
-
-#define BORDER_WIDTH 1
-
-#define MAP_WIDTH 121
-#define MAP_HEIGHT 121
-
-/*
- * Game Specifications
- *
- * * Map, Protect Point, Bot Entry Points, Level Specifications etc.
- */
-
 #include "Map.h"
 
-#define MAX_BOTS 32
+/* Constants ******************************************************************/
 
-const Point_t basePosition = { .X = /*51*/9, .Y = /*31*/12 };
-
-#define ENTRY_POINT_COUNT 3
-const Point_t entryPoints[] PROGMEM = {{ .X = 23, .Y = 0 },
-                                       { .X = 107, .Y = 0},
-                                       { .X = 0, .Y = 15}};
+const Point_t basePosition PROGMEM = { .X = 51, .Y = 31 };
 
 #define LEVEL_COUNT 1
 const LevelSpec_t levels[] PROGMEM = {{ .LevelName = "Beginners Luck",
-                                        .BotCount = 6,
                                         .MoveSpeed = 20,
                                         .HealthPoints = 10,
                                         .AttackSpeed = 10,
                                         .AttackDamage = 2,
                                         .KillReward = 10 }};
 
+#define ENTRY_POINT_COUNT 3
+const Point_t entryPoints[] PROGMEM = {{ .X = 23, .Y = 0 },
+                                       { .X = 107, .Y = 0},
+                                       { .X = 0, .Y = 15}};
+
+/* Game Variables *************************************************************/
+
+Size_t windowSize = { .Width = TERMINAL_DEF_WIDTH,
+                      .Height = TERMINAL_DEF_HEIGHT };
+
+int32_t gold = INITIAL_GOLD;
+Point_t viewPosition;
+Point_t cursorPosition;
+uint8_t level;
+
+uint8_t botCount;
+Bot_t bots[MAX_BOTS];
+
+#define VISITED_POINTS_COUNT 60
+uint16_t visitedPointsCount = 0;
+VisitedPoint_t visitedPoints[VISITED_POINTS_COUNT];
+
+
+/* Game Functions *************************************************************/
+
 /*
- * Game Variables
- *
- * * Bots, Current Level etc.
+ * Gets the background color for a given tile type
  */
-
-#define WEIGHT_COUNT 400
-
-uint8_t weightCount = 0;
-TileWeight_t weights[WEIGHT_COUNT];
-BotInstance_t bots[MAX_BOTS];
-
-uint8_t GameStoreWeight(Point_t *p, uint8_t weight)
+TermColor_t GameGetTileBgColor(const MapTileType_t t)
 {
-    if(weightCount < WEIGHT_COUNT)
+    switch(t)
     {
-        weights[weightCount].Position = *p;
-        weights[weightCount++].Weight = weight;
-    }
-
-    return weightCount;
-}
-
-void GameClearWeights()
-{
-    weightCount = 0;
-}
-
-bool GameWeightsFull()
-{
-    return weightCount >= WEIGHT_COUNT;
-}
-
-
-TileWeight_t *GameWeightByPoint(Point_t *p)
-{
-    for(uint8_t i = 0; i < weightCount; i++)
-    {
-        if(PointsEqual(&weights[i].Position, p))
-        {
-            return &weights[i];
-        }
-    }
-
-    return NULL;
-}
-
-void GameStep(GameWindow_t *window)
-{
-    static int16_t time = 0;
-
-    uint8_t moveSpeed = pgm_read_byte(&(levels[window->Level].MoveSpeed));
-    uint8_t botCount = pgm_read_byte(&(levels[window->Level].BotCount));
-
-    if((time % moveSpeed) == 0)
-    {
-        for(uint8_t i = 0; i < window->BotCount; i++)
-        {
-            GameClearWeights();
-            GameStoreWeight(&bots[i].Position, 0);
-
-            uint8_t weightResult = 0;
-            
-            for(uint8_t i = 0; i < weightCount; i++)
-            {
-                TileWeight_t weight = weights[i];
-                Point_t p = weight.Position;
-                PointAddDirection(&p, Direction_North);
-                
-                if(p.Y >= 0 && GameWindowGetTile(window, &p) != Stone)
-                {
-                    if(!GameWeightByPoint(&p))
-                        if(!GameStoreWeight(&p, weight.Weight + 1))
-                            break;
-                    
-                    if(PointsEqual(&p, &basePosition))
-                    {
-                        weightResult = weight.Weight + 1;
-                        break;
-                    }
-                }
-                
-                p = weight.Position;
-                PointAddDirection(&p, Direction_East);
-                
-                if(p.X < MAP_WIDTH && GameWindowGetTile(window, &p) != Stone)
-                {
-                    if(!GameWeightByPoint(&p))
-                        if(!GameStoreWeight(&p, weight.Weight + 1))
-                            break;
-
-                    if(PointsEqual(&p, &basePosition))
-                    {
-                        weightResult = weight.Weight + 1;
-                        break;
-                    }
-                }
-                
-                p = weight.Position;
-                PointAddDirection(&p, Direction_South);
-                
-                if(p.Y < MAP_HEIGHT && GameWindowGetTile(window, &p) != Stone)
-                {
-                    if(!GameWeightByPoint(&p))
-                        if(!GameStoreWeight(&p, weight.Weight + 1))
-                            break;
-
-                    if(PointsEqual(&p, &basePosition))
-                    {
-                        weightResult = weight.Weight + 1;
-                        break;
-                    }
-                }
-                
-                p = weight.Position;
-                PointAddDirection(&p, Direction_West);
-                
-                if(p.X >= 0 && GameWindowGetTile(window, &p) != Stone)
-                {
-                    if(!GameWeightByPoint(&p))
-                        if(!GameStoreWeight(&p, weight.Weight + 1))
-                            break;
-
-                    if(PointsEqual(&p, &basePosition))
-                    {
-                        weightResult = weight.Weight + 1;
-                        break;
-                    }
-                }
-            }
-            
-            TileWeight_t *weight = NULL;
-            const Point_t *workingPoint = &basePosition;
-            
-            while(--weightResult > 0)
-            {
-                weight = GameWeightByPointWeight(workingPoint, weightResult);
-
-                if(weight != NULL)
-                    workingPoint = &weight->Position;
-                else
-                    break;
-            }
-
-            if(weight != NULL)
-            {
-                bots[i].Position = weight->Position;
-            }
-            else
-            {
-                // Move bots closer to the base along the longer axis
-            }
-        }
-        
-        // Place bots if required
-        if(window->BotCount < botCount)
-        {
-            for(uint8_t i = 0; i < ENTRY_POINT_COUNT; i++)
-            {
-                if(!GameBotAtLocationP(window, &entryPoints[i]))
-                {
-                    GameNewBotP(window, &entryPoints[i]);
-                }
-            }
-        }
+        case Tile_Stone:
+            return TermColor_3A3A3A;
+        case Tile_Water:
+            return TermColor_005FFF;
+        case Tile_Grass:
+            return TermColor_00AF00;
+        case Tile_Empty:
+            return TermColor_000000;
+        default:
+            return TermColor_262626;
     }
 }
 
-TileWeight_t *GameWeightByPointWeight(const Point_t *p, uint8_t weight)
+/*
+ * Gets the foreground color for a given tile type
+ */
+TermColor_t GameGetTileFgColor(const MapTileType_t t)
 {
-    TileWeight_t *tile = NULL;
-    Point_t pTest = *p;
-    pTest.Y -= 1;
-    
-    tile = GameWeightByPoint(&pTest);
-    if(tile != NULL && tile->Weight == weight)
-        return tile;
-    
-    tile = NULL;
-    pTest = *p;
-    pTest.X += 1;
-    
-    tile = GameWeightByPoint(&pTest);
-    if(tile != NULL && tile->Weight == weight)
-        return tile;
-    
-    tile = NULL;
-    pTest = *p;
-    pTest.Y += 1;
-    
-    tile = GameWeightByPoint(&pTest);
-    if(tile != NULL && tile->Weight == weight)
-        return tile;
-    
-    tile = NULL;
-    pTest = *p;
-    pTest.X -= 1;
-    
-    tile = GameWeightByPoint(&pTest);
-    if(tile != NULL && tile->Weight == weight)
-        return tile;
-
-    return NULL;
-}
-
-void GameNewBotP(GameWindow_t *window, const Point_t *p)
-{
-    bots[window->BotCount].HealthPoints =
-        pgm_read_byte(&(levels[window->Level]));
-    
-    bots[window->BotCount].Position.X =
-        pgm_read_byte(&(p->X));
-
-    bots[window->BotCount].Position.Y =
-        pgm_read_byte(&(p->Y));
-
-    GameRenderBot(window, &bots[window->BotCount++]);
-}
-
-void GameRenderBot(GameWindow_t *window, BotInstance_t *bot)
-{
-    int16_t botX = bot->Position.X - window->MapPos.X;
-    int16_t botY = bot->Position.Y - window->MapPos.Y;
-    
-    if(botX >= 0
-        && botX < window->WindowWidth - (BORDER_WIDTH * 2)
-        && botY >= 0
-        && botY < window->WindowHeight - (BORDER_WIDTH * 2))
+    switch(t)
     {
-        GameWindowCursorMove(botX + BORDER_WIDTH + 1, botY + BORDER_WIDTH + 1);
-        GameWindowSetBgColor(TermColor_BotBg);
-        GameWindowSetFgColor(TermColor_BotFg);
-        UartTransmitByte('%');
+        case Tile_Stone:
+            return TermColor_606060;
+        case Tile_Water:
+            return TermColor_00AFFF;
+        case Tile_Grass:
+            return TermColor_5FFF00;
+        case Tile_Empty:
+            return TermColor_000000;
+        default:
+            return TermColor_262626;
     }
 }
 
-bool GameBotAtLocationP(GameWindow_t *window, const Point_t *p)
+/*
+ * Gets the character to print for a map tile type
+ */
+char GameGetTileCharacter(const MapTileType_t t)
 {
-    for(uint8_t i = 0; i < window->BotCount; i++)
+    switch(t)
     {
-        if(bots[i].Position.X == pgm_read_byte(&(p->X))
-            && bots[i].Position.Y == pgm_read_byte(&(p->Y)))
+        case Tile_Stone:
+            return '%';
+        case Tile_Water:
+            return '~';
+        case Tile_Grass:
+            return '.';
+        case Tile_Empty:
+            return ' ';
+        default:
+            return 'X';
+
+    }
+}
+
+/*
+ * Gets the type of map tile given a point
+ */
+MapTileType_t GameGetTile(const Point_t *p)
+{
+    uint16_t tileNum = (p->Y * MAP_WIDTH) + p->X;
+    uint8_t tile = pgm_read_byte(&(mapTiles[tileNum >> 2]));
+    return (tile >> ((tileNum & 0b11) << 1)) & 0b11;
+}
+
+/*
+ * Creates a new bot
+ */
+void GameNewBot(const Point_t *p)
+{
+    bots[botCount].HealthPoints = pgm_read_byte(&(levels[level]));
+    bots[botCount].Position = PointFromP(p);
+    GameRenderBot(&bots[botCount++]);
+}
+
+/*
+ * Returns a bool indicating whether there is a bot at the point provided
+ */
+bool GameBotAtLocationP(const Point_t *p)
+{
+    for(uint8_t i = 0; i < botCount; i++)
+    {
+        if(PointsEqualP(&bots[i].Position, p))
         {
             return TRUE;
         }
@@ -312,149 +140,207 @@ bool GameBotAtLocationP(GameWindow_t *window, const Point_t *p)
 }
 
 /*
- * Initializes a terminal window
+ * Renders the game
  */
-void GameWindowInit(GameWindow_t *window)
+void GameRender()
 {
-    window->WindowWidth = TERMINAL_DEF_WIDTH;
-    window->WindowHeight = TERMINAL_DEF_HEIGHT;
-    
-    window->MapPos.X = 0;
-    window->MapPos.Y = 0;
-    
-    window->CursorPos.X = (window->WindowWidth >> 1);
-    window->CursorPos.Y = (window->WindowHeight >> 1);
-    
-    window->Gold = DEFAULT_MONEY;
-    
-    window->BotCount = 0;
-    window->Level = 0;
+    static Size_t prevWindowSize;
+    static int32_t prevGold;
+    static Point_t prevViewPosition;
+    static Point_t prevCursorPosition;
+
+    if(!SizesEqual(&prevWindowSize, &windowSize))
+    {
+        TerminalSetBgColor(COLOR_BORDER);
+        TerminalClearScreen();
+        GameRenderMap();
+        GameRenderBorders();
+        GameRenderCursor();
+
+        prevWindowSize = windowSize;
+        prevGold = gold;
+        prevViewPosition = viewPosition;
+        prevCursorPosition = cursorPosition;
+    }
+    else
+    {
+        if(!PointsEqual(&prevViewPosition, &viewPosition))
+        {
+            GameRenderMap();
+            GameRenderCursor();
+            prevViewPosition = viewPosition;
+        }
+
+        if(prevGold != gold)
+        {
+            GameRenderBorders();
+            prevGold = gold;
+        }
+        
+        if(!PointsEqual(&prevCursorPosition, &cursorPosition))
+        {
+            GameRenderCursor();
+        }
+    }
 }
 
 /*
- * Gets the type of map tile given x and y
+ * Renders a map tile
  */
-MapTileType_t GameWindowGetTile(GameWindow_t *window, const Point_t *p)
+void GameRenderTile(const MapTileType_t tile)
 {
-    uint16_t tileNum = (p->Y * MAP_WIDTH) + p->X;
-    uint8_t tile = pgm_read_byte(&(mapTiles[tileNum >> 2]));
-    return (tile >> ((tileNum & 0b11) << 1)) & 0b11;
+    TermColor_t color = GameGetTileBgColor(tile);
+    TerminalSetBgColor(color);
+
+    color = GameGetTileFgColor(tile);
+    TerminalSetFgColor(color);
+
+    char symbol = GameGetTileCharacter(tile);
+    UartTransmitByte(symbol);
 }
 
 /*
- * Requests the size of the terminal window
+ * Renders a map tile at a position
  */
-void GameWindowRequestSize()
+void GameRenderTilePosition(const MapTileType_t tile, const Point_t *p)
 {
-    UartPrintP(CS_CCI, 2);
-    UartPrintP(CS_GetWindowSize, 3);
+    TerminalCursorMove(p);
+    GameRenderTile(tile);
 }
 
 /*
- * Moves the terminal cursor to the home position (1, 1)
+ * Renders the map tiles
  */
-void GameWindowCursorHome()
+void GameRenderMap()
 {
-    UartPrintP(CS_CCI, 2);
-    UartPrintP(CS_MoveCursor, 1);
+    TerminalCursorHide();
+    
+    for(uint8_t y = 0; y < (windowSize.Height - (BORDER_WIDTH * 2))
+        && (viewPosition.Y + y) < MAP_HEIGHT; y++)
+    {
+        Point_t startPos = { .X = BORDER_WIDTH, .Y = y + BORDER_WIDTH };
+        TerminalCursorMove(&startPos);
+        
+        for(uint8_t x = 0; x < (windowSize.Width - (BORDER_WIDTH * 2))
+            && (viewPosition.X + x) < MAP_WIDTH; x++)
+        {
+            Point_t p = { .X = viewPosition.X + x,
+                          .Y = viewPosition.Y + y };
+
+            MapTileType_t tile = GameGetTile(&p); 
+            GameRenderTile(tile);
+        }
+    }
+    
+    GameRenderBase();
+    GameRenderBots();
 }
 
 /*
- * Moves the terminal cursor to the position x, y
+ * Renders a bot onto the map
  */
-void GameWindowCursorMove(uint8_t x, uint8_t y)
+void GameRenderBot(const Bot_t *bot)
 {
-    char buf[12] = { 0 };
+    int16_t botX = bot->Position.X - viewPosition.X;
+    int16_t botY = bot->Position.Y - viewPosition.Y;
+    
+    if(botX >= 0 && botX < windowSize.Width - (BORDER_WIDTH * 2)
+        && botY >= 0 && botY < windowSize.Height - (BORDER_WIDTH * 2))
+    {
+        Point_t p = { .X = botX + BORDER_WIDTH, .Y = botY + BORDER_WIDTH };
+        TerminalCursorMove(&p);
+        TerminalSetBgColor(COLOR_BOT_BG);
+        TerminalSetFgColor(COLOR_BOT_FG);
+        UartTransmitByte(BOT_CHAR);
+    }
+}
 
-    UartPrintP(CS_CCI, 2);
+void GameRenderBots()
+{
+    for(uint8_t i = 0; i < botCount; i++)
+    {
+        GameRenderBot(&bots[i]);
+    }
+}
 
-    sprintf(buf, "%d;%dH", y, x);
+/*
+ * Renders the base
+ */
+void GameRenderBase()
+{
+    Point_t bPos = PointFromP(&basePosition);
+    int16_t baseX = bPos.X - viewPosition.X;
+    int16_t baseY = bPos.Y - viewPosition.Y;
+    
+    if(baseX > BORDER_WIDTH
+        && baseX < windowSize.Width - BORDER_WIDTH
+        && baseY > BORDER_WIDTH
+        && baseY < windowSize.Height - BORDER_WIDTH)
+    {
+        Point_t p = { .X = baseX + BORDER_WIDTH, .Y = baseY + BORDER_WIDTH };
+
+        TerminalCursorMove(&p);
+        TerminalSetBgColor(COLOR_BASE);
+        UartTransmitByte(BASE_CHAR);
+    }
+}
+
+void GameRenderBorders()
+{
+    Point_t p = { .X = 4, .Y = 0 };
+    TerminalCursorMove(&p);
+    TerminalSetBgColor(COLOR_BORDER);
+    TerminalSetFgColor(TermColor_FFFFFF);
+
+    char buf[17];
+    sprintf(buf, "Gold: %ld", gold);
     UartPrint(buf, strlen(buf));
 }
 
-/*
- * Hides the terminal cursor
- */
-void GameWindowCursorHide()
+void GameRenderCursor()
 {
-    UartPrintP(CS_CCI, 2);
-    UartPrintP(CS_HideCursor, 4);
-}
+    int16_t cursorX = cursorPosition.X - viewPosition.X;
+    int16_t cursorY = cursorPosition.Y - viewPosition.Y;
 
-/*
- * Shows the terminal cursor
- */
-void GameWindowCursorShow()
-{
-    UartPrintP(CS_CCI, 2);
-    UartPrintP(CS_ShowCursor, 4);
-}
+    if(cursorX < 0)
+    {
+        cursorX = 0;
+    }
+    else if(cursorX > (windowSize.Width - BORDER_WIDTH))
+    {
+        cursorX = windowSize.Width - 1;
+    }
+    else
+    {
+        cursorX += BORDER_WIDTH;
+    }
 
-/*
- * Instructs the terminal emulator to use an alternate buffer with no scrollback
- */
-void GameWindowUseAlternateBuffer()
-{
-    UartPrintP(CS_CCI, 2);
-    UartPrintP(CS_UseAlternateBuffer, 4);
-}
-
-void GameWindowClearScreen()
-{
-    UartPrintP(CS_CCI, 2);
-    UartPrintP(CS_ClearScreen, 2);
-}
-
-/*
- * Changes the foreground color of the terminal
- */
-void GameWindowSetFgColor(TermColor_t color)
-{
-    static TermColor_t prevColor = 0;
+    if(cursorY < 0)
+    {
+        cursorY = 0;
+    }
+    else if(cursorY > (windowSize.Height - BORDER_WIDTH))
+    {
+        cursorY = windowSize.Height - 1;
+    }
+    else
+    {
+        cursorY += BORDER_WIDTH;
+    }
     
-    if(color != prevColor)
-    {
-        UartPrintP(CS_CCI, 2);
-        UartPrintP(CS_SetXTermFgColor, 5);
-        
-        char buf[6];
-        
-        sprintf(buf, "%dm", color);
-        UartPrint(buf, strlen(buf));
-        
-        prevColor = color;
-    }
-}
-
-/*
- * Changes the background color of the terminal
- */
-void GameWindowSetBgColor(TermColor_t color)
-{
-    static TermColor_t prevColor = 0;
-
-    if(color != prevColor)
-    {
-        UartPrintP(CS_CCI, 2);
-        UartPrintP(CS_SetXTermBgColor, 5);
-        
-        char buf[6];
-        
-        sprintf(buf, "%dm", color);
-        UartPrint(buf, strlen(buf));
-        
-        prevColor = color;
-    }
+    Point_t p = { .X = cursorX, .Y = cursorY };
+    TerminalCursorMove(&p);
+    TerminalCursorShow();
 }
 
 /*
  * Parses user input
  */
-void GameWindowParseInput(GameWindow_t *window)
+void GameParseInput()
 {
     static uint8_t csCount = 0;
     static char params[PARAM_COUNT][PARAM_BUF_LEN] = {{ 0 }};
-
+    
     while(UartBytesToReceive())
     {
         uint8_t b = UartReceiveByte();
@@ -472,11 +358,11 @@ void GameWindowParseInput(GameWindow_t *window)
         // Down Arrow
         else if(b == 0x42 && csCount == 2)
         {
-            if(window->MapPos.Y <
-                        (MAP_HEIGHT - window->WindowHeight + (BORDER_WIDTH * 2))
-                && window->WindowHeight < MAP_HEIGHT)
+            if(viewPosition.Y <
+                    (MAP_HEIGHT - windowSize.Height + (BORDER_WIDTH * 2))
+                && windowSize.Height < MAP_HEIGHT)
             {
-                window->MapPos.Y++;
+                viewPosition.Y++;
             }
 
             csCount = 0;
@@ -485,25 +371,23 @@ void GameWindowParseInput(GameWindow_t *window)
         else if(b == 0x41 && csCount == 2)
         {
             // Move map up
-            window->MapPos.Y = (window->MapPos.Y == 0)
-                ? 0 : window->MapPos.Y - 1;
+            viewPosition.Y = (viewPosition.Y == 0) ? 0 : viewPosition.Y - 1;
             csCount = 0;
         }
         // Left Arrow
         else if(b == 0x44 && csCount == 2)
         {
-            window->MapPos.X = (window->MapPos.X == 0)
-                ? 0 : window->MapPos.X - 1;
+            viewPosition.X = (viewPosition.X == 0) ? 0 : viewPosition.X - 1;
             csCount = 0;
         }
         // Right Arrow
         else if(b == 0x43 && csCount == 2)
         {
-            if(window->MapPos.X <
-                          (MAP_WIDTH - window->WindowWidth + (BORDER_WIDTH * 2))
-                && window->WindowWidth < MAP_WIDTH)
+            if(viewPosition.X <
+                    (MAP_WIDTH - windowSize.Width + (BORDER_WIDTH * 2))
+                && windowSize.Width < MAP_WIDTH)
             {
-                window->MapPos.X++;
+                viewPosition.X++;
             }
 
             csCount = 0;
@@ -511,26 +395,26 @@ void GameWindowParseInput(GameWindow_t *window)
         // Cursor Up (w)
         else if(b == 'w' && csCount == 0)
         {
-            window->CursorPos.Y =
-                (window->CursorPos.Y == 0) ? 0 : window->CursorPos.Y - 1;
+            cursorPosition.Y =
+                (cursorPosition.Y == 0) ? 0 : cursorPosition.Y - 1;
         }
         // Cursor Down (s)
         else if(b == 's' && csCount == 0)
         {
-            window->CursorPos.Y = (window->CursorPos.Y == (MAP_HEIGHT - 1))
-                ? window->CursorPos.Y : window->CursorPos.Y + 1;
+            cursorPosition.Y = (cursorPosition.Y == (MAP_HEIGHT - 1))
+                ? cursorPosition.Y : cursorPosition.Y + 1;
         }
         // Cursor Right (d)
         else if(b == 'd' && csCount == 0)
         {
-            window->CursorPos.X = (window->CursorPos.X == (MAP_WIDTH - 1))
-                ? window->CursorPos.X : window->CursorPos.X + 1;
+            cursorPosition.X = (cursorPosition.X == (MAP_WIDTH - 1))
+                ? cursorPosition.X : cursorPosition.X + 1;
         }
         // Cursor Left (a)
         else if(b == 'a' && csCount == 0)
         {
-            window->CursorPos.X = (window->CursorPos.X == 0)
-                ? 0 : window->CursorPos.X - 1;
+            cursorPosition.X = (cursorPosition.X == 0)
+                ? 0 : cursorPosition.X - 1;
         }
         // Begin processing the size of the terminal window
         else if(b == '8' && csCount == 2)
@@ -571,15 +455,14 @@ void GameWindowParseInput(GameWindow_t *window)
             height = (height > 255) ? 255 : height;
             width = (width > 255) ? 255 : width;
             
-            if(window->WindowWidth != width
-                || window->WindowHeight != height)
+            if(windowSize.Width != width || windowSize.Height != height)
             {
-                window->MapPos.X = 0;
-                window->MapPos.Y = 0;
+                viewPosition.X = 0;
+                viewPosition.Y = 0;
             }
 
-            window->WindowWidth = width;
-            window->WindowHeight = height;
+            windowSize.Width = width;
+            windowSize.Height = height;
 
             csCount = 0;
             
@@ -593,173 +476,215 @@ void GameWindowParseInput(GameWindow_t *window)
     }
 }
 
-void GameWindowRenderScreen(GameWindow_t *window)
+/*
+ * Returns a bool indicating whether the number of visited points is full
+ */
+bool VisitedPointsFull()
 {
-    static GameWindow_t prevWindow = { 0 };
-    
-    if(prevWindow.WindowWidth != window->WindowWidth
-        || prevWindow.WindowHeight != window->WindowHeight)
-    {
-        GameWindowSetBgColor(TermColor_NearBlack);
-        GameWindowClearScreen();
-        GameWindowRenderMap(window);
-        GameWindowRenderBorders(window);
-        GameWindowRenderCursor(window);
+    return visitedPointsCount >= VISITED_POINTS_COUNT;
+}
 
-        prevWindow = *window;
+/*
+ * Stores a point and returns a bool indicating that there was enough space
+ */
+bool VisitedPointStore(const Point_t *p, const uint8_t weight)
+{
+    if(visitedPointsCount < VISITED_POINTS_COUNT)
+    {
+        visitedPoints[visitedPointsCount].Position = *p;
+        visitedPoints[visitedPointsCount++].Weight = weight;
+        return TRUE;
     }
-    else
-    {
-        if(!PointsEqual(&prevWindow.MapPos, &window->MapPos))
-        {
-            GameWindowRenderMap(window);
-            GameWindowRenderCursor(window);
-        }
 
-        if(prevWindow.Gold != window->Gold)
+    return FALSE;
+}
+
+/*
+ * Clears the visited points used for path finding
+ */
+void VisitedPointsClear()
+{
+    visitedPointsCount = 0;
+}
+
+/*
+ * Returns a visited point given a point
+ */
+VisitedPoint_t *VisitedPointByPoint(const Point_t *p)
+{
+    for(uint8_t i = 0; i < visitedPointsCount; i++)
+    {
+        if(PointsEqual(&visitedPoints[i].Position, p))
         {
-            GameWindowRenderBorders(window);
+            return &visitedPoints[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * Returns a visited point adjacent to a tile with a given weight
+ */
+VisitedPoint_t *VisitedPointByPointWeight(const Point_t *p,
+    const uint8_t weight)
+{
+    VisitedPoint_t *visitedPoint = NULL;
+    Point_t pTest = *p;
+    PointAddDirection(&pTest, Direction_North);
+    
+    visitedPoint = VisitedPointByPoint(&pTest);
+    if(visitedPoint != NULL && visitedPoint->Weight == weight)
+        return visitedPoint;
+    
+    visitedPoint = NULL;
+    pTest = *p;
+    PointAddDirection(&pTest, Direction_East);
+    
+    visitedPoint = VisitedPointByPoint(&pTest);
+    if(visitedPoint != NULL && visitedPoint->Weight == weight)
+        return visitedPoint;
+    
+    visitedPoint = NULL;
+    pTest = *p;
+    PointAddDirection(&pTest, Direction_South);
+    
+    visitedPoint = VisitedPointByPoint(&pTest);
+    if(visitedPoint != NULL && visitedPoint->Weight == weight)
+        return visitedPoint;
+    
+    visitedPoint = NULL;
+    pTest = *p;
+    PointAddDirection(&pTest, Direction_West);
+    
+    visitedPoint = VisitedPointByPoint(&pTest);
+    if(visitedPoint != NULL && visitedPoint->Weight == weight)
+        return visitedPoint;
+
+    return NULL;
+}
+
+/*
+ * Steps through the game time
+ */
+void GameStep()
+{
+    static int16_t time = 0;
+
+    uint8_t moveSpeed = pgm_read_byte(&(levels[level].MoveSpeed));
+
+    if((time % moveSpeed) == 0)
+    {
+        for(uint8_t i = 0; i < botCount; i++)
+        {
+            VisitedPointsClear();
+            VisitedPointStore(&bots[i].Position, 0);
+            
+            uint8_t weightResult = 0;
+            
+            for(uint8_t i = 0; i < visitedPointsCount; i++)
+            {
+                VisitedPoint_t visitedPoint = visitedPoints[i];
+                Point_t p = visitedPoint.Position;
+                PointAddDirection(&p, Direction_North);
+                
+                if(p.Y >= 0 && GameGetTile(&p) != Tile_Stone)
+                {
+                    if(!VisitedPointByPoint(&p))
+                        if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
+                            break;
+                    
+                    if(PointsEqualP(&p, &basePosition))
+                    {
+                        weightResult = visitedPoint.Weight + 1;
+                        break;
+                    }
+                }
+                
+                p = visitedPoint.Position;
+                PointAddDirection(&p, Direction_East);
+                
+                if(p.X < MAP_WIDTH && GameGetTile(&p) != Tile_Stone)
+                {
+                    if(!VisitedPointByPoint(&p))
+                        if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
+                            break;
+
+                    if(PointsEqualP(&p, &basePosition))
+                    {
+                        weightResult = visitedPoint.Weight + 1;
+                        break;
+                    }
+                }
+                
+                p = visitedPoint.Position;
+                PointAddDirection(&p, Direction_South);
+                
+                if(p.Y < MAP_HEIGHT && GameGetTile(&p) != Tile_Stone)
+                {
+                    if(!VisitedPointByPoint(&p))
+                        if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
+                            break;
+
+                    if(PointsEqualP(&p, &basePosition))
+                    {
+                        weightResult = visitedPoint.Weight + 1;
+                        break;
+                    }
+                }
+                
+                p = visitedPoint.Position;
+                PointAddDirection(&p, Direction_West);
+                
+                if(p.X >= 0 && GameGetTile(&p) != Tile_Stone)
+                {
+                    if(!VisitedPointByPoint(&p))
+                        if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
+                            break;
+
+                    if(PointsEqualP(&p, &basePosition))
+                    {
+                        weightResult = visitedPoint.Weight + 1;
+                        break;
+                    }
+                }
+            }
+            
+            VisitedPoint_t *visitedPoint = NULL;
+            Point_t workingPoint = PointFromP(&basePosition);
+            
+            while(--weightResult > 0)
+            {
+                visitedPoint =
+                    VisitedPointByPointWeight(&workingPoint, weightResult);
+
+                if(visitedPoint != NULL)
+                    workingPoint = visitedPoint->Position;
+                else
+                    break;
+            }
+
+            if(visitedPoint != NULL)
+            {
+                bots[i].Position = visitedPoint->Position;
+            }
+            else
+            {
+                // Move bots closer to the base along the longer axis
+            }
         }
         
-        if(!PointsEqual(&prevWindow.CursorPos, &window->CursorPos))
+        // Place bots if required
+        if(botCount < MAX_BOTS)
         {
-            GameWindowRenderCursor(window);
-        }
-
-        prevWindow = *window;
-    }
-}
-
-void GameWindowRenderMap(GameWindow_t *window)
-{
-    GameWindowCursorHide();
-    
-    for(uint8_t y = 0;
-        y < (window->WindowHeight - (BORDER_WIDTH * 2))
-            && (window->MapPos.Y + y) < MAP_HEIGHT;
-        y++)
-    {
-        GameWindowCursorMove(BORDER_WIDTH + 1, y + BORDER_WIDTH + 1);
-        
-        for(uint8_t x = 0;
-            x < (window->WindowWidth - (BORDER_WIDTH * 2))
-                && (window->MapPos.X + x) < MAP_WIDTH;
-            x++)
-        {
-            Point_t p = { .X = window->MapPos.X + x,
-                          .Y = window->MapPos.Y + y };
-
-            MapTileType_t tile = GameWindowGetTile(window, &p); 
-            GameWindowRenderTile(tile);
+            for(uint8_t i = 0; i < ENTRY_POINT_COUNT; i++)
+            {
+                if(!GameBotAtLocationP(&entryPoints[i]))
+                {
+                    GameNewBot(&entryPoints[i]);
+                }
+            }
         }
     }
-    
-    GameWindowRenderBase(window);
-    GameWindowRenderBots(window);
 }
 
-void GameWindowRenderBase(GameWindow_t *window)
-{
-    int16_t baseX = basePosition.X - window->MapPos.X;
-    int16_t baseY = basePosition.Y - window->MapPos.Y;
-    
-    if(baseX > BORDER_WIDTH && baseX < window->WindowWidth - BORDER_WIDTH
-        && baseY > BORDER_WIDTH && baseY < window->WindowHeight - BORDER_WIDTH)
-    {
-        GameWindowCursorMove(baseX + BORDER_WIDTH + 1,
-            baseY + BORDER_WIDTH + 1);
-        GameWindowSetBgColor(TermColor_Gold);
-        UartTransmitByte(' ');
-    }
-}
-
-void GameWindowRenderBots(GameWindow_t *window)
-{
-    for(uint8_t i = 0; i < window->BotCount; i++)
-    {
-        GameRenderBot(window, &bots[i]);
-    }
-}
-
-void GameWindowRenderTile(MapTileType_t tile)
-{
-    if(tile == Empty)
-    {
-        GameWindowSetBgColor(TermColor_Black);
-        UartTransmitByte(' ');
-    }
-    else if(tile == Stone)
-    {
-        GameWindowSetBgColor(TermColor_StoneBg);
-        GameWindowSetFgColor(TermColor_StoneFg);
-        UartTransmitByte('#');
-    }
-    else if(tile == Water)
-    {
-        GameWindowSetBgColor(TermColor_WaterBg);
-        GameWindowSetFgColor(TermColor_WaterFg);
-        UartTransmitByte('~');
-    }
-    else if(tile == Grass)
-    {
-        GameWindowSetBgColor(TermColor_GrassBg);
-        GameWindowSetFgColor(TermColor_GrassFg);
-        UartTransmitByte('.');
-    }
-}
-
-void GameWindowRenderTilePosition(MapTileType_t tile, uint8_t x, uint8_t y)
-{
-    GameWindowCursorMove(x + 1, y + 1);
-    GameWindowRenderTile(tile);
-}
-
-void GameWindowRenderBorders(GameWindow_t *window)
-{
-    GameWindowCursorMove(5, 1);
-    GameWindowSetBgColor(TermColor_NearBlack);
-    GameWindowSetFgColor(TermColor_White);
-
-    char buf[17];
-    sprintf(buf, "Gold: %ld", window->Gold);
-    UartPrint(buf, strlen(buf));
-}
-
-void GameWindowRenderCursor(GameWindow_t *window)
-{
-    int16_t cursorX = window->CursorPos.X - window->MapPos.X;
-    int16_t cursorY = window->CursorPos.Y - window->MapPos.Y;
-
-    if(cursorX < 0)
-    {
-        cursorX = 0;
-    }
-    else if(cursorX > (window->WindowWidth - BORDER_WIDTH))
-    {
-        cursorX = window->WindowWidth;
-    }
-    else
-    {
-        cursorX += BORDER_WIDTH;
-    }
-
-    if(cursorY < 0)
-    {
-        cursorY = 0;
-    }
-    else if(cursorY > (window->WindowHeight - BORDER_WIDTH))
-    {
-        cursorY = window->WindowHeight;
-    }
-    else
-    {
-        cursorY += BORDER_WIDTH;
-    }
-    
-    GameWindowSetBgColor(TermColor_Black);
-    GameWindowSetFgColor(TermColor_White);
-    
-    // Rows and columns are 1-indexed
-    GameWindowCursorMove(cursorX + 1, cursorY + 1);
-    GameWindowCursorShow();
-}
