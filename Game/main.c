@@ -14,13 +14,14 @@
 #include "Uart.h"
 #include "GameWindow.h"
 
+GameWindow_t gameWindow;
+
 void __attribute__((signal)) TIMER0_OVF_vect(void)
 {
     GameWindowRequestSize();
+    GameStep(&gameWindow);
     TCNT0 = 0;
 }
-
-GameWindow_t gameWindow;
 
 int main(void)
 {

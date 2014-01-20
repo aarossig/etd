@@ -18,6 +18,15 @@ const char CS_SetXTermBgColor[] PROGMEM = { '4', '8', ';', '5', ';' };
 const char CS_SetXTermFgColor[] PROGMEM = { '3', '8', ';', '5', ';' };
 const char CR_LF[] PROGMEM = { '\r', '\n' };
 
+Size_t windowSize;
+Point_t viewPosition;
+Point_t cursorPosition;
+int32_t gold;
+uint8_t botCount;
+uint8_t level;
+
+/* Dirty Below Here... ********************************************************/
+
 #define PARAM_BUF_LEN 5
 #define PARAM_COUNT 2
 
@@ -26,15 +35,281 @@ const char CR_LF[] PROGMEM = { '\r', '\n' };
 #define MAP_WIDTH 121
 #define MAP_HEIGHT 121
 
+/*
+ * Game Specifications
+ *
+ * * Map, Protect Point, Bot Entry Points, Level Specifications etc.
+ */
+
 #include "Map.h"
 
+#define MAX_BOTS 32
+
+const Point_t basePosition = { .X = /*51*/9, .Y = /*31*/12 };
+
 #define ENTRY_POINT_COUNT 3
+const Point_t entryPoints[] PROGMEM = {{ .X = 23, .Y = 0 },
+                                       { .X = 107, .Y = 0},
+                                       { .X = 0, .Y = 15}};
 
-Point_t basePosition = { .X = 51, .Y = 31 };
+#define LEVEL_COUNT 1
+const LevelSpec_t levels[] PROGMEM = {{ .LevelName = "Beginners Luck",
+                                        .BotCount = 6,
+                                        .MoveSpeed = 20,
+                                        .HealthPoints = 10,
+                                        .AttackSpeed = 10,
+                                        .AttackDamage = 2,
+                                        .KillReward = 10 }};
 
-Point_t entryPoints[] = {{ .X = 23, .Y = 0 },
-                         { .X = 107, .Y = 0},
-                         { .X = 0, .Y = 15}};
+/*
+ * Game Variables
+ *
+ * * Bots, Current Level etc.
+ */
+
+#define WEIGHT_COUNT 400
+
+uint8_t weightCount = 0;
+TileWeight_t weights[WEIGHT_COUNT];
+BotInstance_t bots[MAX_BOTS];
+
+uint8_t GameStoreWeight(Point_t *p, uint8_t weight)
+{
+    if(weightCount < WEIGHT_COUNT)
+    {
+        weights[weightCount].Position = *p;
+        weights[weightCount++].Weight = weight;
+    }
+
+    return weightCount;
+}
+
+void GameClearWeights()
+{
+    weightCount = 0;
+}
+
+bool GameWeightsFull()
+{
+    return weightCount >= WEIGHT_COUNT;
+}
+
+
+TileWeight_t *GameWeightByPoint(Point_t *p)
+{
+    for(uint8_t i = 0; i < weightCount; i++)
+    {
+        if(PointsEqual(&weights[i].Position, p))
+        {
+            return &weights[i];
+        }
+    }
+
+    return NULL;
+}
+
+void GameStep(GameWindow_t *window)
+{
+    static int16_t time = 0;
+
+    uint8_t moveSpeed = pgm_read_byte(&(levels[window->Level].MoveSpeed));
+    uint8_t botCount = pgm_read_byte(&(levels[window->Level].BotCount));
+
+    if((time % moveSpeed) == 0)
+    {
+        for(uint8_t i = 0; i < window->BotCount; i++)
+        {
+            GameClearWeights();
+            GameStoreWeight(&bots[i].Position, 0);
+
+            uint8_t weightResult = 0;
+            
+            for(uint8_t i = 0; i < weightCount; i++)
+            {
+                TileWeight_t weight = weights[i];
+                Point_t p = weight.Position;
+                PointAddDirection(&p, Direction_North);
+                
+                if(p.Y >= 0 && GameWindowGetTile(window, &p) != Stone)
+                {
+                    if(!GameWeightByPoint(&p))
+                        if(!GameStoreWeight(&p, weight.Weight + 1))
+                            break;
+                    
+                    if(PointsEqual(&p, &basePosition))
+                    {
+                        weightResult = weight.Weight + 1;
+                        break;
+                    }
+                }
+                
+                p = weight.Position;
+                PointAddDirection(&p, Direction_East);
+                
+                if(p.X < MAP_WIDTH && GameWindowGetTile(window, &p) != Stone)
+                {
+                    if(!GameWeightByPoint(&p))
+                        if(!GameStoreWeight(&p, weight.Weight + 1))
+                            break;
+
+                    if(PointsEqual(&p, &basePosition))
+                    {
+                        weightResult = weight.Weight + 1;
+                        break;
+                    }
+                }
+                
+                p = weight.Position;
+                PointAddDirection(&p, Direction_South);
+                
+                if(p.Y < MAP_HEIGHT && GameWindowGetTile(window, &p) != Stone)
+                {
+                    if(!GameWeightByPoint(&p))
+                        if(!GameStoreWeight(&p, weight.Weight + 1))
+                            break;
+
+                    if(PointsEqual(&p, &basePosition))
+                    {
+                        weightResult = weight.Weight + 1;
+                        break;
+                    }
+                }
+                
+                p = weight.Position;
+                PointAddDirection(&p, Direction_West);
+                
+                if(p.X >= 0 && GameWindowGetTile(window, &p) != Stone)
+                {
+                    if(!GameWeightByPoint(&p))
+                        if(!GameStoreWeight(&p, weight.Weight + 1))
+                            break;
+
+                    if(PointsEqual(&p, &basePosition))
+                    {
+                        weightResult = weight.Weight + 1;
+                        break;
+                    }
+                }
+            }
+            
+            TileWeight_t *weight = NULL;
+            const Point_t *workingPoint = &basePosition;
+            
+            while(--weightResult > 0)
+            {
+                weight = GameWeightByPointWeight(workingPoint, weightResult);
+
+                if(weight != NULL)
+                    workingPoint = &weight->Position;
+                else
+                    break;
+            }
+
+            if(weight != NULL)
+            {
+                bots[i].Position = weight->Position;
+            }
+            else
+            {
+                // Move bots closer to the base along the longer axis
+            }
+        }
+        
+        // Place bots if required
+        if(window->BotCount < botCount)
+        {
+            for(uint8_t i = 0; i < ENTRY_POINT_COUNT; i++)
+            {
+                if(!GameBotAtLocationP(window, &entryPoints[i]))
+                {
+                    GameNewBotP(window, &entryPoints[i]);
+                }
+            }
+        }
+    }
+}
+
+TileWeight_t *GameWeightByPointWeight(const Point_t *p, uint8_t weight)
+{
+    TileWeight_t *tile = NULL;
+    Point_t pTest = *p;
+    pTest.Y -= 1;
+    
+    tile = GameWeightByPoint(&pTest);
+    if(tile != NULL && tile->Weight == weight)
+        return tile;
+    
+    tile = NULL;
+    pTest = *p;
+    pTest.X += 1;
+    
+    tile = GameWeightByPoint(&pTest);
+    if(tile != NULL && tile->Weight == weight)
+        return tile;
+    
+    tile = NULL;
+    pTest = *p;
+    pTest.Y += 1;
+    
+    tile = GameWeightByPoint(&pTest);
+    if(tile != NULL && tile->Weight == weight)
+        return tile;
+    
+    tile = NULL;
+    pTest = *p;
+    pTest.X -= 1;
+    
+    tile = GameWeightByPoint(&pTest);
+    if(tile != NULL && tile->Weight == weight)
+        return tile;
+
+    return NULL;
+}
+
+void GameNewBotP(GameWindow_t *window, const Point_t *p)
+{
+    bots[window->BotCount].HealthPoints =
+        pgm_read_byte(&(levels[window->Level]));
+    
+    bots[window->BotCount].Position.X =
+        pgm_read_byte(&(p->X));
+
+    bots[window->BotCount].Position.Y =
+        pgm_read_byte(&(p->Y));
+
+    GameRenderBot(window, &bots[window->BotCount++]);
+}
+
+void GameRenderBot(GameWindow_t *window, BotInstance_t *bot)
+{
+    int16_t botX = bot->Position.X - window->MapPos.X;
+    int16_t botY = bot->Position.Y - window->MapPos.Y;
+    
+    if(botX >= 0
+        && botX < window->WindowWidth - (BORDER_WIDTH * 2)
+        && botY >= 0
+        && botY < window->WindowHeight - (BORDER_WIDTH * 2))
+    {
+        GameWindowCursorMove(botX + BORDER_WIDTH + 1, botY + BORDER_WIDTH + 1);
+        GameWindowSetBgColor(TermColor_BotBg);
+        GameWindowSetFgColor(TermColor_BotFg);
+        UartTransmitByte('%');
+    }
+}
+
+bool GameBotAtLocationP(GameWindow_t *window, const Point_t *p)
+{
+    for(uint8_t i = 0; i < window->BotCount; i++)
+    {
+        if(bots[i].Position.X == pgm_read_byte(&(p->X))
+            && bots[i].Position.Y == pgm_read_byte(&(p->Y)))
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
 
 /*
  * Initializes a terminal window
@@ -44,21 +319,24 @@ void GameWindowInit(GameWindow_t *window)
     window->WindowWidth = TERMINAL_DEF_WIDTH;
     window->WindowHeight = TERMINAL_DEF_HEIGHT;
     
-    window->MapX = 0;
-    window->MapY = 0;
-
-    window->CursorX = (window->WindowWidth >> 1);
-    window->CursorY = (window->WindowHeight >> 1);
-
+    window->MapPos.X = 0;
+    window->MapPos.Y = 0;
+    
+    window->CursorPos.X = (window->WindowWidth >> 1);
+    window->CursorPos.Y = (window->WindowHeight >> 1);
+    
     window->Gold = DEFAULT_MONEY;
+    
+    window->BotCount = 0;
+    window->Level = 0;
 }
 
 /*
  * Gets the type of map tile given x and y
  */
-MapTileType_t GameWindowGetTile(GameWindow_t *window, uint8_t x, uint8_t y)
+MapTileType_t GameWindowGetTile(GameWindow_t *window, const Point_t *p)
 {
-    uint16_t tileNum = (y * MAP_WIDTH) + x;
+    uint16_t tileNum = (p->Y * MAP_WIDTH) + p->X;
     uint8_t tile = pgm_read_byte(&(mapTiles[tileNum >> 2]));
     return (tile >> ((tileNum & 0b11) << 1)) & 0b11;
 }
@@ -194,11 +472,11 @@ void GameWindowParseInput(GameWindow_t *window)
         // Down Arrow
         else if(b == 0x42 && csCount == 2)
         {
-            if(window->MapY <
+            if(window->MapPos.Y <
                         (MAP_HEIGHT - window->WindowHeight + (BORDER_WIDTH * 2))
                 && window->WindowHeight < MAP_HEIGHT)
             {
-                window->MapY++;
+                window->MapPos.Y++;
             }
 
             csCount = 0;
@@ -207,23 +485,25 @@ void GameWindowParseInput(GameWindow_t *window)
         else if(b == 0x41 && csCount == 2)
         {
             // Move map up
-            window->MapY = (window->MapY == 0) ? 0 : window->MapY - 1;
+            window->MapPos.Y = (window->MapPos.Y == 0)
+                ? 0 : window->MapPos.Y - 1;
             csCount = 0;
         }
         // Left Arrow
         else if(b == 0x44 && csCount == 2)
         {
-            window->MapX = (window->MapX == 0) ? 0 : window->MapX - 1;
+            window->MapPos.X = (window->MapPos.X == 0)
+                ? 0 : window->MapPos.X - 1;
             csCount = 0;
         }
         // Right Arrow
         else if(b == 0x43 && csCount == 2)
         {
-            if(window->MapX <
+            if(window->MapPos.X <
                           (MAP_WIDTH - window->WindowWidth + (BORDER_WIDTH * 2))
                 && window->WindowWidth < MAP_WIDTH)
             {
-                window->MapX++;
+                window->MapPos.X++;
             }
 
             csCount = 0;
@@ -231,24 +511,26 @@ void GameWindowParseInput(GameWindow_t *window)
         // Cursor Up (w)
         else if(b == 'w' && csCount == 0)
         {
-            window->CursorY = (window->CursorY == 0) ? 0 : window->CursorY - 1;
+            window->CursorPos.Y =
+                (window->CursorPos.Y == 0) ? 0 : window->CursorPos.Y - 1;
         }
         // Cursor Down (s)
         else if(b == 's' && csCount == 0)
         {
-            window->CursorY = (window->CursorY == (MAP_HEIGHT - 1))
-                ? window->CursorY : window->CursorY + 1;
+            window->CursorPos.Y = (window->CursorPos.Y == (MAP_HEIGHT - 1))
+                ? window->CursorPos.Y : window->CursorPos.Y + 1;
         }
         // Cursor Right (d)
         else if(b == 'd' && csCount == 0)
         {
-            window->CursorX = (window->CursorX == (MAP_WIDTH - 1))
-                ? window->CursorX : window->CursorX + 1;
+            window->CursorPos.X = (window->CursorPos.X == (MAP_WIDTH - 1))
+                ? window->CursorPos.X : window->CursorPos.X + 1;
         }
         // Cursor Left (a)
         else if(b == 'a' && csCount == 0)
         {
-            window->CursorX = (window->CursorX == 0) ? 0 : window->CursorX - 1;
+            window->CursorPos.X = (window->CursorPos.X == 0)
+                ? 0 : window->CursorPos.X - 1;
         }
         // Begin processing the size of the terminal window
         else if(b == '8' && csCount == 2)
@@ -292,8 +574,8 @@ void GameWindowParseInput(GameWindow_t *window)
             if(window->WindowWidth != width
                 || window->WindowHeight != height)
             {
-                window->MapX = 0;
-                window->MapY = 0;
+                window->MapPos.X = 0;
+                window->MapPos.Y = 0;
             }
 
             window->WindowWidth = width;
@@ -328,7 +610,7 @@ void GameWindowRenderScreen(GameWindow_t *window)
     }
     else
     {
-        if(prevWindow.MapX != window->MapX || prevWindow.MapY != window->MapY)
+        if(!PointsEqual(&prevWindow.MapPos, &window->MapPos))
         {
             GameWindowRenderMap(window);
             GameWindowRenderCursor(window);
@@ -339,8 +621,7 @@ void GameWindowRenderScreen(GameWindow_t *window)
             GameWindowRenderBorders(window);
         }
         
-        if(prevWindow.CursorX != window->CursorX
-            || prevWindow.CursorY != window->CursorY)
+        if(!PointsEqual(&prevWindow.CursorPos, &window->CursorPos))
         {
             GameWindowRenderCursor(window);
         }
@@ -355,32 +636,48 @@ void GameWindowRenderMap(GameWindow_t *window)
     
     for(uint8_t y = 0;
         y < (window->WindowHeight - (BORDER_WIDTH * 2))
-            && (window->MapY + y) < MAP_HEIGHT;
+            && (window->MapPos.Y + y) < MAP_HEIGHT;
         y++)
     {
         GameWindowCursorMove(BORDER_WIDTH + 1, y + BORDER_WIDTH + 1);
         
         for(uint8_t x = 0;
             x < (window->WindowWidth - (BORDER_WIDTH * 2))
-                && (window->MapX + x) < MAP_WIDTH;
+                && (window->MapPos.X + x) < MAP_WIDTH;
             x++)
         {
-            MapTileType_t tile =
-                GameWindowGetTile(window, window->MapX + x, window->MapY + y); 
+            Point_t p = { .X = window->MapPos.X + x,
+                          .Y = window->MapPos.Y + y };
+
+            MapTileType_t tile = GameWindowGetTile(window, &p); 
             GameWindowRenderTile(tile);
         }
     }
-
-    int16_t baseX = basePosition.X - window->MapX;
-    int16_t baseY = basePosition.Y - window->MapY;
     
-    if(baseX > 0 && baseX < window->WindowWidth
-        && baseY > 0 && baseY < window->WindowHeight)
+    GameWindowRenderBase(window);
+    GameWindowRenderBots(window);
+}
+
+void GameWindowRenderBase(GameWindow_t *window)
+{
+    int16_t baseX = basePosition.X - window->MapPos.X;
+    int16_t baseY = basePosition.Y - window->MapPos.Y;
+    
+    if(baseX > BORDER_WIDTH && baseX < window->WindowWidth - BORDER_WIDTH
+        && baseY > BORDER_WIDTH && baseY < window->WindowHeight - BORDER_WIDTH)
     {
         GameWindowCursorMove(baseX + BORDER_WIDTH + 1,
             baseY + BORDER_WIDTH + 1);
         GameWindowSetBgColor(TermColor_Gold);
         UartTransmitByte(' ');
+    }
+}
+
+void GameWindowRenderBots(GameWindow_t *window)
+{
+    for(uint8_t i = 0; i < window->BotCount; i++)
+    {
+        GameRenderBot(window, &bots[i]);
     }
 }
 
@@ -430,8 +727,8 @@ void GameWindowRenderBorders(GameWindow_t *window)
 
 void GameWindowRenderCursor(GameWindow_t *window)
 {
-    int16_t cursorX = window->CursorX - window->MapX;
-    int16_t cursorY = window->CursorY - window->MapY;
+    int16_t cursorX = window->CursorPos.X - window->MapPos.X;
+    int16_t cursorY = window->CursorPos.Y - window->MapPos.Y;
 
     if(cursorX < 0)
     {
