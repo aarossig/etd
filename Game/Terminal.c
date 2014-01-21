@@ -50,6 +50,19 @@ void TerminalCursorMove(const Point_t *p)
 }
 
 /*
+ * Moves the terminal to x, y
+ */
+void TerminalCursorMoveXY(const uint8_t x, const uint8_t y)
+{
+    UartPrintP(CS_CCI, 2);
+    
+    // Buffer size based on 3 characters per parameter plus the delimeters
+    char buf[9];
+    sprintf(buf, "%d;%dH", y + 1, x + 1);
+    UartPrint(buf, strlen(buf));
+}
+
+/*
  * Hides the terminal cursor
  */
 void TerminalCursorHide()

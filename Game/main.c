@@ -17,7 +17,6 @@
 void __attribute__((signal)) TIMER0_OVF_vect(void)
 {
     TerminalRequestSize();
-    //GameStep();
     TCNT0 = 0;
 }
 
@@ -37,6 +36,7 @@ int main(void)
         TIMSK0 &= ~(1 << TOIE0);
         GameRender();
         GameParseInput();
+        GameStep();
         TIMSK0 |= (1 << TOIE0);
     }
     

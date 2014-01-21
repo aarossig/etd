@@ -39,6 +39,7 @@ void TerminalRequestSize();
 
 void TerminalCursorHome();
 void TerminalCursorMove(const Point_t *p);
+void TerminalCursorMoveXY(const uint8_t x, const uint8_t y);
 void TerminalCursorHide();
 void TerminalCursorShow();
 

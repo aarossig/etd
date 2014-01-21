@@ -30,6 +30,7 @@
 #define INITIAL_GOLD 30000
 
 #define MAX_BOTS 32
+#define MAX_FLOOD_ATTEMPTS 5
 #define BOT_CHAR '%'
 #define BASE_CHAR ' '
 
@@ -55,10 +56,11 @@ MapTileType_t GameGetTile(const Point_t *p);
 typedef struct Bot_t {
     uint8_t HealthPoints;
     Point_t Position;
+    uint8_t FloodAttempts;
 } Bot_t;
 
 void GameNewBot(const Point_t *p);
-bool GameBotAtLocationP(const Point_t *p);
+bool GameBotAtLocation(const Point_t *p);
 
 /* Rendering and UI ***********************************************************/
 
@@ -103,5 +105,9 @@ VisitedPoint_t *VisitedPointByPointWeight(const Point_t *p,
 /* Time Stepping **************************************************************/
 
 void GameStep();
+uint16_t GameAbs(int16_t v);
+bool GameSimpleMove(Bot_t *bot);
+bool GameComplexMove(Bot_t *bot);
+bool GameMoveBot(Bot_t *bot, Direction_t direction);
 
 #endif
