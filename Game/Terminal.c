@@ -45,7 +45,7 @@ void TerminalCursorMove(const Point_t *p)
     
     // Buffer size based on 3 characters per parameter plus the delimeters
     char buf[9];
-    sprintf(buf, "%d;%dH", p->Y + 1, p->X + 1);
+    sprintf(buf, "%u;%uH", p->Y + 1, p->X + 1);
     UartPrint(buf, strlen(buf));
 }
 
@@ -58,7 +58,7 @@ void TerminalCursorMoveXY(const uint8_t x, const uint8_t y)
     
     // Buffer size based on 3 characters per parameter plus the delimeters
     char buf[9];
-    sprintf(buf, "%d;%dH", y + 1, x + 1);
+    sprintf(buf, "%u;%uH", y + 1, x + 1);
     UartPrint(buf, strlen(buf));
 }
 
@@ -111,7 +111,7 @@ void TerminalSetFgColor(TermColor_t color)
         UartPrintP(CS_SetXTermFgColor, 5);
         
         char buf[5];
-        sprintf(buf, "%dm", color);
+        sprintf(buf, "%um", color);
         UartPrint(buf, strlen(buf));
         
         prevColor = color;
@@ -131,7 +131,7 @@ void TerminalSetBgColor(TermColor_t color)
         UartPrintP(CS_SetXTermBgColor, 5);
         
         char buf[5];
-        sprintf(buf, "%dm", color);
+        sprintf(buf, "%um", color);
         UartPrint(buf, strlen(buf));
         
         prevColor = color;

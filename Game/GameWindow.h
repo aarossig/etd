@@ -16,6 +16,7 @@
 #include "Point.h"
 #include "Size.h"
 #include "Terminal.h"
+#include "Rand.h"
 
 #define MAP_WIDTH 121
 #define MAP_HEIGHT 121
@@ -28,6 +29,8 @@
 #define COLOR_BOT_FG TermColor_FF5F00
 
 #define INITIAL_GOLD 30000
+
+#define BOT_ATTACK_DISTANCE 6
 
 #define MAX_BOTS 32
 #define MAX_FLOOD_ATTEMPTS 5
@@ -60,13 +63,14 @@ typedef struct Bot_t {
 } Bot_t;
 
 void GameNewBot(const Point_t *p);
+void GameRandomizeBot(Bot_t *bot);
 bool GameBotAtLocation(const Point_t *p);
 
 /* Rendering and UI ***********************************************************/
 
 void GameRender();
 void GameRenderTile(const MapTileType_t tile);
-void GameRenderTilePosition(const MapTileType_t tile, const Point_t *p);
+void GameRenderTilePosition(const Point_t *p);
 void GameRenderMap();
 void GameRenderBot(const Bot_t *bot);
 void GameRenderBots();
@@ -95,7 +99,7 @@ typedef struct VisitedPoint_t {
 } VisitedPoint_t;
 
 bool VisitedPointsFull();
-bool VisitedPointStore(const Point_t *p, const uint8_t weight);
+VisitedPoint_t *VisitedPointStore(const Point_t *p, const uint8_t weight);
 void VisitedPointsClear();
 
 VisitedPoint_t *VisitedPointByPoint(const Point_t *p);

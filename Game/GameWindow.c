@@ -11,10 +11,7 @@ const Point_t basePosition = { .X = 51, .Y = 31 };
 
 #define LEVEL_COUNT 1
 const LevelSpec_t levels[] PROGMEM = {{ .LevelName = "Beginners Luck",
-                                        .MoveSpeed = 20,
                                         .HealthPoints = 10,
-                                        .AttackSpeed = 10,
-                                        .AttackDamage = 2,
                                         .KillReward = 10 }};
 
 #define ENTRY_POINT_COUNT 3
@@ -32,10 +29,11 @@ Point_t viewPosition;
 Point_t cursorPosition;
 uint8_t level;
 
+uint8_t botStep;
 uint8_t botCount;
 Bot_t bots[MAX_BOTS];
 
-#define VISITED_POINTS_COUNT 250
+#define VISITED_POINTS_COUNT 150
 uint8_t visitedPointsCount = 0;
 VisitedPoint_t visitedPoints[VISITED_POINTS_COUNT];
 
@@ -118,9 +116,12 @@ MapTileType_t GameGetTile(const Point_t *p)
  */
 void GameNewBot(const Point_t *p)
 {
-    bots[botCount].HealthPoints = pgm_read_byte(&(levels[level]));
-    bots[botCount].Position = *p;
-    GameRenderBot(&bots[botCount++]);
+    if(botCount < MAX_BOTS)
+    {
+        bots[botCount].HealthPoints = pgm_read_byte(&(levels[level]));
+        bots[botCount].Position = *p;
+        GameRenderBot(&bots[botCount++]);
+    }
 }
 
 /*
@@ -202,10 +203,23 @@ void GameRenderTile(const MapTileType_t tile)
 /*
  * Renders a map tile at a position
  */
-void GameRenderTilePosition(const MapTileType_t tile, const Point_t *p)
+void GameRenderTilePosition(const Point_t *p)
 {
-    TerminalCursorMove(p);
-    GameRenderTile(tile);
+    int16_t screenX = p->X - viewPosition.X;
+    int16_t screenY = p->Y - viewPosition.Y;
+
+    if(screenX >= 0
+        && screenX < (windowSize.Width - (2 * BORDER_WIDTH))
+        && screenY >= 0
+        && screenY < (windowSize.Height - (2 * BORDER_WIDTH)))
+    {
+        screenX += BORDER_WIDTH;
+        screenY += BORDER_WIDTH;
+        TerminalCursorMoveXY(screenX, screenY);
+        
+        MapTileType_t tile = GameGetTile(p);
+        GameRenderTile(tile);
+    }
 }
 
 /*
@@ -439,7 +453,6 @@ void GameParseInput()
         // Terminal window size changed terminate
         else if(b == 't' && csCount >= 11 && csCount < 16)
         {
-            /*
             uint16_t width = TERMINAL_DEF_WIDTH;
             uint16_t height = TERMINAL_DEF_HEIGHT;
             
@@ -459,7 +472,7 @@ void GameParseInput()
             
             // Clear the parameter buffers
             memset(params, 0, PARAM_COUNT * PARAM_BUF_LEN);
-            */
+
             csCount = 0;
         }
         else
@@ -480,16 +493,16 @@ bool VisitedPointsFull()
 /*
  * Stores a point and returns a bool indicating that there was enough space
  */
-bool VisitedPointStore(const Point_t *p, const uint8_t weight)
+VisitedPoint_t *VisitedPointStore(const Point_t *p, const uint8_t weight)
 {
     if(visitedPointsCount < VISITED_POINTS_COUNT)
     {
         visitedPoints[visitedPointsCount].Position = *p;
-        visitedPoints[visitedPointsCount++].Weight = weight;
-        return TRUE;
+        visitedPoints[visitedPointsCount].Weight = weight;
+        return &visitedPoints[visitedPointsCount++];
     }
 
-    return FALSE;
+    return NULL;
 }
 
 /*
@@ -524,35 +537,40 @@ VisitedPoint_t *VisitedPointByPointWeight(const Point_t *p,
 {
     VisitedPoint_t *visitedPoint = NULL;
     Point_t pTest = *p;
-    PointAddDirection(&pTest, Direction_North);
-    
-    visitedPoint = VisitedPointByPoint(&pTest);
-    if(visitedPoint != NULL && visitedPoint->Weight == weight)
-        return visitedPoint;
-    
-    visitedPoint = NULL;
-    pTest = *p;
-    PointAddDirection(&pTest, Direction_East);
-    
-    visitedPoint = VisitedPointByPoint(&pTest);
-    if(visitedPoint != NULL && visitedPoint->Weight == weight)
-        return visitedPoint;
+    if(PointAddDirection(&pTest, Direction_North))
+    {
+        visitedPoint = VisitedPointByPoint(&pTest);
+        if(visitedPoint != NULL && visitedPoint->Weight == weight)
+            return visitedPoint;
+    }
     
     visitedPoint = NULL;
     pTest = *p;
-    PointAddDirection(&pTest, Direction_South);
-    
-    visitedPoint = VisitedPointByPoint(&pTest);
-    if(visitedPoint != NULL && visitedPoint->Weight == weight)
-        return visitedPoint;
+    if(!PointAddDirection(&pTest, Direction_East))
+    {
+        visitedPoint = VisitedPointByPoint(&pTest);
+        if(visitedPoint != NULL && visitedPoint->Weight == weight)
+            return visitedPoint;
+    }
     
     visitedPoint = NULL;
     pTest = *p;
-    PointAddDirection(&pTest, Direction_West);
+    if(PointAddDirection(&pTest, Direction_South))
+    {
+        visitedPoint = VisitedPointByPoint(&pTest);
+        if(visitedPoint != NULL && visitedPoint->Weight == weight)
+            return visitedPoint;
+    }
     
-    visitedPoint = VisitedPointByPoint(&pTest);
-    if(visitedPoint != NULL && visitedPoint->Weight == weight)
-        return visitedPoint;
+    visitedPoint = NULL;
+    pTest = *p;
+    if(PointAddDirection(&pTest, Direction_West))
+    {
+        visitedPoint = VisitedPointByPoint(&pTest);
+        if(visitedPoint != NULL && visitedPoint->Weight == weight)
+            return visitedPoint;
+    }
+    
 
     return NULL;
 }
@@ -562,30 +580,37 @@ VisitedPoint_t *VisitedPointByPointWeight(const Point_t *p,
  */
 void GameStep()
 {
-    for(uint8_t i = 0; i < botCount; i++)
+    if(!GameSimpleMove(&bots[botStep]))
     {
-        if(!GameSimpleMove(&bots[i]))
+        if(!GameComplexMove(&bots[botStep]))
         {
-            if(!GameComplexMove(&bots[i]))
+            bots[botStep].FloodAttempts++;
+
+            if(bots[botStep].FloodAttempts >= MAX_FLOOD_ATTEMPTS)
             {
-                bots[i].FloodAttempts++;
-            }
-            else
-            {
-                bots[i].FloodAttempts = 0;
+                uint16_t distance = PointShortestAxis(
+                    bots[botStep].Position, basePosition);
+                
+                if(distance >= BOT_ATTACK_DISTANCE)
+                {
+                    GameRandomizeBot(&bots[botStep]);
+                }
             }
         }
+        else
+        {
+            bots[botStep].FloodAttempts = 0;
+        }
     }
+
+    botStep = botStep >= botCount ? 0 : botStep + 1;
     
     // Place bots if required
-    if(botCount < MAX_BOTS)
+    for(uint8_t i = 0; i < ENTRY_POINT_COUNT && botCount < MAX_BOTS; i++)
     {
-        for(uint8_t i = 0; i < ENTRY_POINT_COUNT; i++)
+        if(!GameBotAtLocation(&entryPoints[i]))
         {
-            if(!GameBotAtLocation(&entryPoints[i]))
-            {
-                GameNewBot(&entryPoints[i]);
-            }
+            GameNewBot(&entryPoints[i]);
         }
     }
 }
@@ -692,93 +717,113 @@ bool GameComplexMove(Bot_t *bot)
         VisitedPointsClear();
         VisitedPointStore(&bot->Position, 0);
         
-        uint8_t weightResult = 0;
+        VisitedPoint_t *destinationPoint = NULL;
         
         for(uint8_t i = 0; i < visitedPointsCount; i++)
         {
-            VisitedPoint_t visitedPoint = visitedPoints[i];
-            Point_t p = visitedPoint.Position;
-            PointAddDirection(&p, Direction_North);
+            VisitedPoint_t *visitedPoint = &visitedPoints[i];
+            Point_t p = visitedPoint->Position;
             
-            if(p.Y >= 0 && GameGetTile(&p) != Tile_Stone)
+            if(PointAddDirection(&p, Direction_North)
+                && GameGetTile(&p) != Tile_Stone)
             {
                 if(!VisitedPointByPoint(&p))
-                    if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
+                {
+                    VisitedPoint_t *storedPoint = VisitedPointStore(&p,
+                        visitedPoint->Weight + 1);
+
+                    if(storedPoint == NULL)
+                    {
+                        return FALSE;
+                    }
+                    
+                    if(PointsEqual(p, basePosition))
+                    {
+                        destinationPoint = storedPoint;
                         break;
+                    }
+                }
+            }
+            
+            p = visitedPoint->Position;
+            
+            if(PointAddDirection(&p, Direction_East)
+                && p.X < MAP_WIDTH
+                && GameGetTile(&p) != Tile_Stone)
+            {
+                VisitedPoint_t *storedPoint = VisitedPointStore(&p,
+                    visitedPoint->Weight + 1);
+
+                if(storedPoint == NULL)
+                {
+                    return FALSE;
+                }
                 
                 if(PointsEqual(p, basePosition))
                 {
-                    weightResult = visitedPoint.Weight;
+                    destinationPoint = storedPoint;
                     break;
                 }
             }
             
-            p = visitedPoint.Position;
-            PointAddDirection(&p, Direction_East);
+            p = visitedPoint->Position;
             
-            if(p.X < MAP_WIDTH && GameGetTile(&p) != Tile_Stone)
+            if(PointAddDirection(&p, Direction_South)
+                && p.Y < MAP_HEIGHT
+                && GameGetTile(&p) != Tile_Stone)
             {
-                if(!VisitedPointByPoint(&p))
-                    if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
-                        break;
+                VisitedPoint_t *storedPoint = VisitedPointStore(&p,
+                    visitedPoint->Weight + 1);
+
+                if(storedPoint == NULL)
+                {
+                    return FALSE;
+                }
 
                 if(PointsEqual(p, basePosition))
                 {
-                    weightResult = visitedPoint.Weight;
+                    destinationPoint = storedPoint;
                     break;
                 }
             }
             
-            p = visitedPoint.Position;
-            PointAddDirection(&p, Direction_South);
+            p = visitedPoint->Position;
             
-            if(p.Y < MAP_HEIGHT && GameGetTile(&p) != Tile_Stone)
+            if(PointAddDirection(&p, Direction_West)
+                && GameGetTile(&p) != Tile_Stone)
             {
                 if(!VisitedPointByPoint(&p))
-                    if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
-                        break;
-
-                if(PointsEqual(p, basePosition))
                 {
-                    weightResult = visitedPoint.Weight;
-                    break;
-                }
-            }
-            
-            p = visitedPoint.Position;
-            PointAddDirection(&p, Direction_West);
-            
-            if(p.X >= 0 && GameGetTile(&p) != Tile_Stone)
-            {
-                if(!VisitedPointByPoint(&p))
-                    if(!VisitedPointStore(&p, visitedPoint.Weight + 1))
-                        break;
+                    VisitedPoint_t *storedPoint = VisitedPointStore(&p,
+                        visitedPoint->Weight + 1);
 
-                if(PointsEqual(p, basePosition))
-                {
-                    weightResult = visitedPoint.Weight;
-                    break;
+                    if(storedPoint == NULL)
+                    {
+                        return FALSE;
+                    }
+
+                    if(PointsEqual(p, basePosition))
+                    {
+                        destinationPoint = storedPoint;
+                        break;
+                    }
                 }
             }
         }
         
-        VisitedPoint_t *visitedPoint = NULL;
-        Point_t workingPoint = basePosition;
-        
-        while(weightResult-- > 0)
+        while(destinationPoint != NULL && destinationPoint->Weight > 1)
         {
-            visitedPoint =
-                VisitedPointByPointWeight(&workingPoint, weightResult);
-
-            if(visitedPoint != NULL)
-                workingPoint = visitedPoint->Position;
-            else
-                break;
+            destinationPoint =
+                VisitedPointByPointWeight(&destinationPoint->Position,
+                    destinationPoint->Weight - 1);
         }
 
-        if(visitedPoint != NULL)
+        if(destinationPoint != NULL)
         {
-            bot->Position = visitedPoint->Position;
+            GameRenderTilePosition(&bot->Position);
+            bot->Position = destinationPoint->Position;
+            GameRenderBot(bot);
+            
             return TRUE;
         }
     }
@@ -791,12 +836,59 @@ uint16_t GameAbs(int16_t v)
     return (v < 0) ? -v : v;
 }
 
+void GameRandomizeBot(Bot_t *bot)
+{
+    while(1)
+    {
+        uint8_t randX = MAP_WIDTH;
+        uint8_t randY = MAP_HEIGHT;
+
+        while(randX >= MAP_WIDTH)
+        {
+            randX = RandGetByte();
+        }
+        
+        while(randY >= MAP_HEIGHT)
+        {
+            randY = RandGetByte();
+        }
+
+        Point_t p = { .X = randX,
+                      .Y = randY };
+        
+        if(PointsEqual(p, basePosition))
+        {
+            continue;
+        }
+        else if(GameGetTile(&p) == Tile_Stone)
+        {
+            continue;
+        }
+        else if(GameBotAtLocation(&p))
+        {
+            continue;
+        }
+        
+        GameRenderTilePosition(&bot->Position);
+        bot->Position = p;
+        GameRenderBot(bot);
+        bot->FloodAttempts = 0;
+        break;
+    }
+}
+
 bool GameMoveBot(Bot_t *bot, Direction_t direction)
 {
     Point_t pTest = bot->Position;
-    PointAddDirection(&pTest, direction);
-
-    if(GameGetTile(&pTest) == Tile_Stone)
+    if(!PointAddDirection(&pTest, direction))
+    {
+        return FALSE;
+    }
+    else if(pTest.X >= MAP_WIDTH || pTest.Y >= MAP_HEIGHT)
+    {
+        return FALSE;
+    }
+    else if(GameGetTile(&pTest) == Tile_Stone)
     {
         return FALSE;
     }
@@ -810,7 +902,9 @@ bool GameMoveBot(Bot_t *bot, Direction_t direction)
     }
     else
     {
+        GameRenderTilePosition(&bot->Position);
         PointAddDirection(&bot->Position, direction);
+        GameRenderBot(bot);
         return TRUE;
     }
 }

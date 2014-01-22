@@ -21,7 +21,8 @@ typedef struct Point_t {
 
 bool PointsEqual(const Point_t p1, const Point_t p2);
 Point_t PointAdd(const Point_t p1, const Point_t p2);
-void PointAddDirection(Point_t *p, const Direction_t d);
+bool PointAddDirection(Point_t *p, const Direction_t d);
 bool PointInSize(const Point_t *p, const Size_t *s);
+uint8_t PointShortestAxis(const Point_t p1, const Point_t p2);
 
 #endif

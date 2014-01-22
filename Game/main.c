@@ -12,32 +12,34 @@
 #include <avr/interrupt.h>
 
 #include "Uart.h"
+#include "Rand.h"
 #include "GameWindow.h"
 
-void __attribute__((signal)) TIMER0_OVF_vect(void)
+void __attribute__((signal)) TIMER1_COMPA_vect(void)
 {
+    sei();
+    GameStep();
     TerminalRequestSize();
-    TCNT0 = 0;
 }
 
 int main(void)
 {
     UartInit();
+    RandInit();
     
     TerminalUseAlternateBuffer();
 
-    // Configure a ~60Hz interrupt
-    TCCR0A = (1 << WGM01);
-    TCCR0B = (1 << CS02) | (1 << CS00);
-    TIMSK0 = (1 << TOIE0);
+    TCCR1B = (1 << WGM12) | (1 << CS12) | (1 << CS10);
+    OCR1AH = (800 >> 8);
+    OCR1AL = (800 & 0xFF);
+    TIMSK1 = (1 << OCIE1A);
     
     while(1)
     {
-        TIMSK0 &= ~(1 << TOIE0);
-        GameRender();
+        TIMSK1 &= ~(1 << OCIE1A);
         GameParseInput();
-        GameStep();
-        TIMSK0 |= (1 << TOIE0);
+        GameRender();
+        TIMSK1 |= (1 << OCIE1A);
     }
     
     return 0;
