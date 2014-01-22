@@ -7,6 +7,7 @@
 SRC = $(wildcard *.cs)
 BIN = maptools.exe
 MAP = map.txt
+MAP_DEST = ../Game/Map.h
 
 # Targets ######################################################################
 
@@ -19,4 +20,4 @@ clean:
 	rm -f $(BIN)
 
 run: all
-	mono $(BIN) $(MAP)
+	mono $(BIN) $(MAP) > $(MAP_DEST)

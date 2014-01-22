@@ -15,13 +15,6 @@
 #include "Rand.h"
 #include "GameWindow.h"
 
-void __attribute__((signal)) TIMER1_COMPA_vect(void)
-{
-    sei();
-    GameStep();
-    TerminalRequestSize();
-}
-
 int main(void)
 {
     UartInit();
@@ -29,17 +22,26 @@ int main(void)
     
     TerminalUseAlternateBuffer();
 
-    TCCR1B = (1 << WGM12) | (1 << CS12) | (1 << CS10);
-    OCR1AH = (800 >> 8);
-    OCR1AL = (800 & 0xFF);
-    TIMSK1 = (1 << OCIE1A);
+    TCCR1B = (1 << CS12) | (1 << CS10);
     
     while(1)
     {
-        TIMSK1 &= ~(1 << OCIE1A);
+        TCCR1B = (1 << CS12) | (1 << CS10);
+        
         GameParseInput();
         GameRender();
-        TIMSK1 |= (1 << OCIE1A);
+        
+        TCCR1B &= ~((1 << CS12) | (1 << CS10));
+
+        uint16_t countValue = (TCNT1H << 8) | (TCNT1L);
+        if(countValue > 800)
+        {
+            GameStep();
+            TerminalRequestSize();
+            
+            TCNT1H = 0;
+            TCNT1L = 0;
+        }
     }
     
     return 0;

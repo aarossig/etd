@@ -19,7 +19,7 @@
 #include "Rand.h"
 
 #define MAP_WIDTH 121
-#define MAP_HEIGHT 121
+#define MAP_HEIGHT 48
 
 #define BORDER_WIDTH 1
 
@@ -98,7 +98,6 @@ typedef struct VisitedPoint_t {
     uint8_t Weight;
 } VisitedPoint_t;
 
-bool VisitedPointsFull();
 VisitedPoint_t *VisitedPointStore(const Point_t *p, const uint8_t weight);
 void VisitedPointsClear();
 

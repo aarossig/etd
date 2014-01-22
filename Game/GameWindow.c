@@ -14,10 +14,15 @@ const LevelSpec_t levels[] PROGMEM = {{ .LevelName = "Beginners Luck",
                                         .HealthPoints = 10,
                                         .KillReward = 10 }};
 
-#define ENTRY_POINT_COUNT 3
+#define ENTRY_POINT_COUNT 8
 const Point_t entryPoints[] = {{ .X = 23, .Y = 0 },
                                { .X = 107, .Y = 0},
-                               { .X = 0, .Y = 15}};
+                               { .X = 0, .Y = 15},
+                               { .X = 0, .Y = 22},
+                               { .X = 24, .Y = 47},
+                               { .X = 109, .Y = 47},
+                               { .X = 120, .Y = 41},
+                               { .X = 120, .Y = 31}};
 
 /* Game Variables *************************************************************/
 
@@ -33,7 +38,7 @@ uint8_t botStep;
 uint8_t botCount;
 Bot_t bots[MAX_BOTS];
 
-#define VISITED_POINTS_COUNT 150
+#define VISITED_POINTS_COUNT 20
 uint8_t visitedPointsCount = 0;
 VisitedPoint_t visitedPoints[VISITED_POINTS_COUNT];
 
@@ -181,6 +186,7 @@ void GameRender()
         if(!PointsEqual(prevCursorPosition, cursorPosition))
         {
             GameRenderCursor();
+            prevCursorPosition = cursorPosition;
         }
     }
 }
@@ -257,8 +263,8 @@ void GameRenderBot(const Bot_t *bot)
     int16_t botX = bot->Position.X - viewPosition.X;
     int16_t botY = bot->Position.Y - viewPosition.Y;
     
-    if(botX >= 0 && botX < windowSize.Width - (BORDER_WIDTH * 2)
-        && botY >= 0 && botY < windowSize.Height - (BORDER_WIDTH * 2))
+    if(botX >= 0 && botX < (windowSize.Width - (BORDER_WIDTH * 2))
+        && botY >= 0 && botY < (windowSize.Height - (BORDER_WIDTH * 2)))
     {
         TerminalCursorMoveXY(botX + BORDER_WIDTH, botY + BORDER_WIDTH);
         TerminalSetBgColor(COLOR_BOT_BG);
@@ -283,10 +289,10 @@ void GameRenderBase()
     int16_t baseX = basePosition.X - viewPosition.X;
     int16_t baseY = basePosition.Y - viewPosition.Y;
     
-    if(baseX > 0
-        && baseX < windowSize.Width - (BORDER_WIDTH * 2)
-        && baseY > 0
-        && baseY < windowSize.Height - (BORDER_WIDTH * 2))
+    if(baseX >= 0
+        && baseX < (windowSize.Width - (BORDER_WIDTH * 2))
+        && baseY >= 0
+        && baseY < (windowSize.Height - (BORDER_WIDTH * 2)))
     {
         TerminalCursorMoveXY(baseX + BORDER_WIDTH, baseY + BORDER_WIDTH);
         TerminalSetBgColor(COLOR_BASE);
@@ -314,7 +320,8 @@ void GameRenderCursor()
     {
         cursorX = 0;
     }
-    else if(cursorX > (windowSize.Width - BORDER_WIDTH))
+    else if(cursorX >=
+        (viewPosition.X + windowSize.Width - (2 * BORDER_WIDTH)))
     {
         cursorX = windowSize.Width - 1;
     }
@@ -327,7 +334,8 @@ void GameRenderCursor()
     {
         cursorY = 0;
     }
-    else if(cursorY > (windowSize.Height - BORDER_WIDTH))
+    else if(cursorY >=
+        (viewPosition.Y + windowSize.Height - (2 * BORDER_WIDTH)))
     {
         cursorY = windowSize.Height - 1;
     }
@@ -414,14 +422,14 @@ void GameParseInput()
         // Cursor Right (d)
         else if(b == 'd' && csCount == 0)
         {
-            cursorPosition.X = (cursorPosition.X  < MAP_WIDTH - 1)
+            cursorPosition.X = (cursorPosition.X  < MAP_WIDTH)
                 ? cursorPosition.X + 1: cursorPosition.X;
         }
         // Cursor Left (a)
         else if(b == 'a' && csCount == 0)
         {
-            cursorPosition.X = (cursorPosition.X == 0)
-                ? 0 : cursorPosition.X - 1;
+            cursorPosition.X =
+                (cursorPosition.X == 0) ? 0 : cursorPosition.X - 1;
         }
         // Begin processing the size of the terminal window
         else if(b == '8' && csCount == 2)
@@ -434,7 +442,7 @@ void GameParseInput()
             csCount++;
         }
         // Read a numeric parameter response
-        else if(b >= 0x30 && b < 0x3A && csCount >= 4 && csCount < 9)
+        else if(b >= '0' && b <= '9' && csCount >= 4 && csCount < 9)
         {
             params[0][csCount - 4] = b;
             csCount++;
@@ -445,7 +453,7 @@ void GameParseInput()
             csCount = 10;
         }
         // Read a numeric parameter response
-        else if(b >= 0x30 && b < 0x3A && csCount >= 10 && csCount < 15)
+        else if(b >= '0' && b <= '9' && csCount >= 10 && csCount < 15)
         {
             params[1][csCount - 10] = b;
             csCount++;
@@ -472,7 +480,7 @@ void GameParseInput()
             
             // Clear the parameter buffers
             memset(params, 0, PARAM_COUNT * PARAM_BUF_LEN);
-
+            
             csCount = 0;
         }
         else
@@ -480,14 +488,6 @@ void GameParseInput()
             csCount = 0;
         }
     }
-}
-
-/*
- * Returns a bool indicating whether the number of visited points is full
- */
-bool VisitedPointsFull()
-{
-    return visitedPointsCount >= VISITED_POINTS_COUNT;
 }
 
 /*
@@ -584,8 +584,6 @@ void GameStep()
     {
         if(!GameComplexMove(&bots[botStep]))
         {
-            bots[botStep].FloodAttempts++;
-
             if(bots[botStep].FloodAttempts >= MAX_FLOOD_ATTEMPTS)
             {
                 uint16_t distance = PointShortestAxis(
@@ -596,14 +594,15 @@ void GameStep()
                     GameRandomizeBot(&bots[botStep]);
                 }
             }
-        }
-        else
-        {
-            bots[botStep].FloodAttempts = 0;
+            else
+            {
+                bots[botStep].FloodAttempts++;
+            }
         }
     }
-
-    botStep = botStep >= botCount ? 0 : botStep + 1;
+    
+    botStep++;
+    botStep %= botCount;
     
     // Place bots if required
     for(uint8_t i = 0; i < ENTRY_POINT_COUNT && botCount < MAX_BOTS; i++)
@@ -613,6 +612,8 @@ void GameStep()
             GameNewBot(&entryPoints[i]);
         }
     }
+
+    GameRenderCursor();
 }
 
 /*
@@ -725,23 +726,21 @@ bool GameComplexMove(Bot_t *bot)
             Point_t p = visitedPoint->Position;
             
             if(PointAddDirection(&p, Direction_North)
-                && GameGetTile(&p) != Tile_Stone)
+                && GameGetTile(&p) != Tile_Stone
+                && !VisitedPointByPoint(&p))
             {
-                if(!VisitedPointByPoint(&p))
+                VisitedPoint_t *storedPoint = VisitedPointStore(&p,
+                    visitedPoint->Weight + 1);
+                
+                if(storedPoint == NULL)
                 {
-                    VisitedPoint_t *storedPoint = VisitedPointStore(&p,
-                        visitedPoint->Weight + 1);
-
-                    if(storedPoint == NULL)
-                    {
-                        return FALSE;
-                    }
-                    
-                    if(PointsEqual(p, basePosition))
-                    {
-                        destinationPoint = storedPoint;
-                        break;
-                    }
+                    return FALSE;
+                }
+                
+                if(PointsEqual(p, basePosition))
+                {
+                    destinationPoint = storedPoint;
+                    break;
                 }
             }
             
@@ -749,7 +748,8 @@ bool GameComplexMove(Bot_t *bot)
             
             if(PointAddDirection(&p, Direction_East)
                 && p.X < MAP_WIDTH
-                && GameGetTile(&p) != Tile_Stone)
+                && GameGetTile(&p) != Tile_Stone
+                && !VisitedPointByPoint(&p))
             {
                 VisitedPoint_t *storedPoint = VisitedPointStore(&p,
                     visitedPoint->Weight + 1);
@@ -770,7 +770,8 @@ bool GameComplexMove(Bot_t *bot)
             
             if(PointAddDirection(&p, Direction_South)
                 && p.Y < MAP_HEIGHT
-                && GameGetTile(&p) != Tile_Stone)
+                && GameGetTile(&p) != Tile_Stone
+                && !VisitedPointByPoint(&p))
             {
                 VisitedPoint_t *storedPoint = VisitedPointStore(&p,
                     visitedPoint->Weight + 1);
@@ -790,23 +791,21 @@ bool GameComplexMove(Bot_t *bot)
             p = visitedPoint->Position;
             
             if(PointAddDirection(&p, Direction_West)
-                && GameGetTile(&p) != Tile_Stone)
+                && GameGetTile(&p) != Tile_Stone
+                && !VisitedPointByPoint(&p))
             {
-                if(!VisitedPointByPoint(&p))
+                VisitedPoint_t *storedPoint = VisitedPointStore(&p,
+                    visitedPoint->Weight + 1);
+
+                if(storedPoint == NULL)
                 {
-                    VisitedPoint_t *storedPoint = VisitedPointStore(&p,
-                        visitedPoint->Weight + 1);
+                    return FALSE;
+                }
 
-                    if(storedPoint == NULL)
-                    {
-                        return FALSE;
-                    }
-
-                    if(PointsEqual(p, basePosition))
-                    {
-                        destinationPoint = storedPoint;
-                        break;
-                    }
+                if(PointsEqual(p, basePosition))
+                {
+                    destinationPoint = storedPoint;
+                    break;
                 }
             }
         }
@@ -823,6 +822,7 @@ bool GameComplexMove(Bot_t *bot)
             GameRenderTilePosition(&bot->Position);
             bot->Position = destinationPoint->Position;
             GameRenderBot(bot);
+            bot->FloodAttempts = 0;
             
             return TRUE;
         }
