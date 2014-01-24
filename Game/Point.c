@@ -65,7 +65,7 @@ bool PointInSize(const Point_t *p, const Size_t *s)
 /*
  * Returns the shortest axis difference between these two points
  */
-uint8_t PointShortestAxis(const Point_t p1, const Point_t p2)
+uint8_t PointLongestAxis(const Point_t p1, const Point_t p2)
 {
     int16_t x = p1.X - p2.X;
     int16_t y = p1.Y - p2.Y;
@@ -73,7 +73,7 @@ uint8_t PointShortestAxis(const Point_t p1, const Point_t p2)
     uint8_t absX = x < 0 ? -x : x;
     uint8_t absY = y < 0 ? -y : y;
 
-    if(absX < absY)
+    if(absX > absY)
     {
         return absX;
     }
@@ -83,4 +83,14 @@ uint8_t PointShortestAxis(const Point_t p1, const Point_t p2)
     }
 }
 
+uint8_t PointDistance(const Point_t p1, const Point_t p2)
+{
+    int16_t x = p1.X - p2.X;
+    int16_t y = p1.Y - p2.Y;
+
+    uint8_t absX = x < 0 ? -x : x;
+    uint8_t absY = y < 0 ? -y : y;
+    
+    return absX + absY;
+}
 

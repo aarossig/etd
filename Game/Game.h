@@ -22,17 +22,24 @@
 #define MAP_HEIGHT 48
 
 #define BORDER_WIDTH 1
+#define BORDER_PAD 4
 
 #define COLOR_BASE TermColor_D7AF00
 #define COLOR_BORDER TermColor_262626
 #define COLOR_BOT_BG TermColor_D70000
 #define COLOR_BOT_FG TermColor_FF5F00
+#define COLOR_TOWER_BG TermColor_AF00FF
+#define COLOR_TOWER_FG TermColor_FFFFFF
 
 #define INITIAL_GOLD 30000
+
+#define TOWER_BUILD_COST 1500
 
 #define BOT_ATTACK_DISTANCE 6
 
 #define MAX_BOTS 32
+#define MAX_TOWERS 128
+
 #define MAX_FLOOD_ATTEMPTS 5
 #define BOT_CHAR '%'
 #define BASE_CHAR ' '
@@ -42,17 +49,28 @@
 
 /* Map Tiles ******************************************************************/
 
-typedef enum MapTileType_t {
+typedef enum TileType_t {
     Tile_Empty,
     Tile_Stone,
     Tile_Water,
     Tile_Grass
-} MapTileType_t;
+} TileType_t;
 
-TermColor_t GameGetTileBgColor(const MapTileType_t t);
-TermColor_t GameGetTileFgColor(const MapTileType_t t);
-char GameGetTileCharacter(const MapTileType_t t);
-MapTileType_t GameGetTile(const Point_t *p);
+TermColor_t GameGetTileBgColor(const TileType_t t);
+TermColor_t GameGetTileFgColor(const TileType_t t);
+char GameGetTileCharacter(const TileType_t t);
+TileType_t GameGetTile(const Point_t p);
+
+/* Towers *********************************************************************/
+
+typedef struct Tower_t {
+    Point_t Position;
+    uint8_t Level;
+} Tower_t;
+
+Tower_t *GameTowerByPoint(const Point_t p);
+uint8_t GameTowerAttackDamage(Tower_t *tower);
+void GameNewTower();
 
 /* Bots ***********************************************************************/
 
@@ -62,21 +80,27 @@ typedef struct Bot_t {
     uint8_t FloodAttempts;
 } Bot_t;
 
-void GameNewBot(const Point_t *p);
+void GameNewBot(const Point_t p);
 void GameRandomizeBot(Bot_t *bot);
-bool GameBotAtLocation(const Point_t *p);
+Bot_t *GameBotByPoint(const Point_t p);
+void GameAttackBot(const uint8_t botIndex, const uint8_t damage);
 
 /* Rendering and UI ***********************************************************/
 
 void GameRender();
-void GameRenderTile(const MapTileType_t tile);
-void GameRenderTilePosition(const Point_t *p);
+void GameRenderTile(const TileType_t tile);
+void GameRenderTilePosition(const Point_t p);
 void GameRenderMap();
 void GameRenderBot(const Bot_t *bot);
+void GameRenderTowers();
+void GameRenderTower(const Tower_t *tower);
 void GameRenderBots();
 void GameRenderBase();
 void GameRenderBorders();
 void GameRenderCursor();
+void GameClearStatus();
+void GameRenderStatusP(const char *status);
+void GameRenderStatus(const char *status);
 
 void GameParseInput();
 

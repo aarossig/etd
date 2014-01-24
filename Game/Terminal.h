@@ -24,6 +24,7 @@ typedef enum TermColor_t {
     TermColor_00AF00 = 34,
     TermColor_00AFFF = 39,
     TermColor_5FFF00 = 82,
+    TermColor_AF00FF = 129,
     TermColor_D70000 = 160,
     TermColor_D7AF00 = 178,
     TermColor_FF5F00 = 202,
@@ -48,6 +49,9 @@ void TerminalClearScreen();
 
 void TerminalSetFgColor(TermColor_t color);
 void TerminalSetBgColor(TermColor_t color);
+
+void TerminalInsertSpaces(uint8_t count);
+
 
 
 #endif

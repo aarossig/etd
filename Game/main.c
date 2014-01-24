@@ -13,7 +13,7 @@
 
 #include "Uart.h"
 #include "Rand.h"
-#include "GameWindow.h"
+#include "Game.h"
 
 int main(void)
 {
@@ -34,7 +34,7 @@ int main(void)
         TCCR1B &= ~((1 << CS12) | (1 << CS10));
 
         uint16_t countValue = (TCNT1H << 8) | (TCNT1L);
-        if(countValue > 800)
+        if(countValue > 600)
         {
             GameStep();
             TerminalRequestSize();

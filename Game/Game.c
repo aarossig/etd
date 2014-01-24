@@ -2,7 +2,7 @@
  * Game Implementation
  */
 
-#include "GameWindow.h"
+#include "Game.h"
 #include "Map.h"
 
 /* Constants ******************************************************************/
@@ -24,6 +24,11 @@ const Point_t entryPoints[] = {{ .X = 23, .Y = 0 },
                                { .X = 120, .Y = 41},
                                { .X = 120, .Y = 31}};
 
+const char TowerBuilt[] PROGMEM = "Tower Built Successfully";
+const char TowerNotBuilt[] PROGMEM = "Cannot Build Here";
+const char TowerLimitExceeded[] PROGMEM = "Tower Limit Exceeded";
+const char MoreGoldRequired[] PROGMEM = "More Gold Required";
+
 /* Game Variables *************************************************************/
 
 Size_t windowSize = { .Width = TERMINAL_DEF_WIDTH,
@@ -36,9 +41,11 @@ uint8_t level;
 
 uint8_t botStep;
 uint8_t botCount;
+uint8_t towerCount;
 Bot_t bots[MAX_BOTS];
+Tower_t towers[MAX_TOWERS];
 
-#define VISITED_POINTS_COUNT 20
+#define VISITED_POINTS_COUNT 120
 uint8_t visitedPointsCount = 0;
 VisitedPoint_t visitedPoints[VISITED_POINTS_COUNT];
 
@@ -48,7 +55,7 @@ VisitedPoint_t visitedPoints[VISITED_POINTS_COUNT];
 /*
  * Gets the background color for a given tile type
  */
-TermColor_t GameGetTileBgColor(const MapTileType_t t)
+TermColor_t GameGetTileBgColor(const TileType_t t)
 {
     switch(t)
     {
@@ -68,7 +75,7 @@ TermColor_t GameGetTileBgColor(const MapTileType_t t)
 /*
  * Gets the foreground color for a given tile type
  */
-TermColor_t GameGetTileFgColor(const MapTileType_t t)
+TermColor_t GameGetTileFgColor(const TileType_t t)
 {
     switch(t)
     {
@@ -88,7 +95,7 @@ TermColor_t GameGetTileFgColor(const MapTileType_t t)
 /*
  * Gets the character to print for a map tile type
  */
-char GameGetTileCharacter(const MapTileType_t t)
+char GameGetTileCharacter(const TileType_t t)
 {
     switch(t)
     {
@@ -102,29 +109,118 @@ char GameGetTileCharacter(const MapTileType_t t)
             return ' ';
         default:
             return 'X';
-
     }
 }
 
 /*
  * Gets the type of map tile given a point
  */
-MapTileType_t GameGetTile(const Point_t *p)
+TileType_t GameGetTile(const Point_t p)
 {
-    uint16_t tileNum = (p->Y * MAP_WIDTH) + p->X;
+    uint16_t tileNum = (p.Y * MAP_WIDTH) + p.X;
     uint8_t tile = pgm_read_byte(&(mapTiles[tileNum >> 2]));
     return (tile >> ((tileNum & 0b11) << 1)) & 0b11;
 }
 
 /*
+ * Gets a tower given a point
+ */
+Tower_t *GameTowerByPoint(Point_t p)
+{
+    for(uint8_t i = 0; i < towerCount; i++)
+    {
+        if(PointsEqual(towers[i].Position, p))
+        {
+            return &towers[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * Get tower damage for level
+ */
+uint8_t GameTowerAttackDamage(Tower_t *tower)
+{
+    switch(tower->Level)
+    {
+        case 1:
+            return 2;
+        case 2:
+            return 5;
+        case 3:
+            return 9;
+        default:
+            return 0;
+    }
+}
+
+/*
+ * Creates a new tower
+ */
+void GameNewTower()
+{
+    if(towerCount >= MAX_TOWERS)
+    {
+        GameRenderStatusP(TowerLimitExceeded);
+    }
+    else if((gold - TOWER_BUILD_COST) < 0)
+    {
+        GameRenderStatusP(MoreGoldRequired);
+    }
+    else if(GameGetTile(cursorPosition) == Tile_Stone
+        || GameTowerByPoint(cursorPosition)
+        || PointsEqual(cursorPosition, basePosition)
+        || cursorPosition.X < viewPosition.X
+        || cursorPosition.X >= (viewPosition.X + windowSize.Width)
+        || cursorPosition.Y < viewPosition.Y
+        || cursorPosition.Y >= (viewPosition.Y + windowSize.Height))
+    {
+        GameRenderStatusP(TowerNotBuilt);
+    }
+    else
+    {
+        Bot_t *bot = GameBotByPoint(cursorPosition);
+        
+        if(bot != NULL && bot->HealthPoints > 0)
+        {
+            GameRenderStatusP(TowerNotBuilt);
+            return;
+        }
+        
+        for(uint8_t i = 0; i < ENTRY_POINT_COUNT; i++)
+        {
+            if(PointsEqual(entryPoints[i], cursorPosition))
+            {
+                GameRenderStatusP(TowerNotBuilt);
+                return;
+            }
+        }
+        
+        towers[towerCount].Position = cursorPosition;
+        towers[towerCount].Level = 1;
+        
+        GameRenderTower(&towers[towerCount++]);
+        GameRenderBorders();
+        GameRenderStatusP(TowerBuilt);
+        
+        gold -= TOWER_BUILD_COST;
+
+        return;
+    }
+}
+
+/*
  * Creates a new bot
  */
-void GameNewBot(const Point_t *p)
+void GameNewBot(const Point_t p)
 {
     if(botCount < MAX_BOTS)
     {
-        bots[botCount].HealthPoints = pgm_read_byte(&(levels[level]));
-        bots[botCount].Position = *p;
+        bots[botCount].HealthPoints =
+            pgm_read_byte(&(levels[level].HealthPoints));
+        bots[botCount].Position = p;
         GameRenderBot(&bots[botCount++]);
     }
 }
@@ -132,17 +228,32 @@ void GameNewBot(const Point_t *p)
 /*
  * Returns a bool indicating whether there is a bot at the point provided
  */
-bool GameBotAtLocation(const Point_t *p)
+Bot_t *GameBotByPoint(const Point_t p)
 {
     for(uint8_t i = 0; i < botCount; i++)
     {
-        if(PointsEqual(bots[i].Position, *p))
+        if(PointsEqual(bots[i].Position, p))
         {
-            return TRUE;
+            return &bots[i];
         }
     }
+    
+    return NULL;
+}
 
-    return FALSE;
+/*
+ * Attacks a bot with the provided damage
+ */
+void GameAttackBot(const uint8_t botIndex, const uint8_t damage)
+{
+    int16_t newHp = bots[botIndex].HealthPoints - damage;
+    newHp = newHp < 0 ? 0 : newHp;
+    bots[botIndex].HealthPoints = newHp;
+
+    if(newHp == 0)
+    {
+        GameRenderTilePosition(bots[botIndex].Position);
+    }
 }
 
 /*
@@ -194,7 +305,7 @@ void GameRender()
 /*
  * Renders a map tile
  */
-void GameRenderTile(const MapTileType_t tile)
+void GameRenderTile(const TileType_t tile)
 {
     TermColor_t color = GameGetTileBgColor(tile);
     TerminalSetBgColor(color);
@@ -209,10 +320,10 @@ void GameRenderTile(const MapTileType_t tile)
 /*
  * Renders a map tile at a position
  */
-void GameRenderTilePosition(const Point_t *p)
+void GameRenderTilePosition(const Point_t p)
 {
-    int16_t screenX = p->X - viewPosition.X;
-    int16_t screenY = p->Y - viewPosition.Y;
+    int16_t screenX = p.X - viewPosition.X;
+    int16_t screenY = p.Y - viewPosition.Y;
 
     if(screenX >= 0
         && screenX < (windowSize.Width - (2 * BORDER_WIDTH))
@@ -223,7 +334,7 @@ void GameRenderTilePosition(const Point_t *p)
         screenY += BORDER_WIDTH;
         TerminalCursorMoveXY(screenX, screenY);
         
-        MapTileType_t tile = GameGetTile(p);
+        TileType_t tile = GameGetTile(p);
         GameRenderTile(tile);
     }
 }
@@ -246,13 +357,14 @@ void GameRenderMap()
             Point_t p = { .X = viewPosition.X + x,
                           .Y = viewPosition.Y + y };
 
-            MapTileType_t tile = GameGetTile(&p); 
+            TileType_t tile = GameGetTile(p); 
             GameRenderTile(tile);
         }
     }
     
     GameRenderBase();
     GameRenderBots();
+    GameRenderTowers();
 }
 
 /*
@@ -260,16 +372,47 @@ void GameRenderMap()
  */
 void GameRenderBot(const Bot_t *bot)
 {
-    int16_t botX = bot->Position.X - viewPosition.X;
-    int16_t botY = bot->Position.Y - viewPosition.Y;
-    
-    if(botX >= 0 && botX < (windowSize.Width - (BORDER_WIDTH * 2))
-        && botY >= 0 && botY < (windowSize.Height - (BORDER_WIDTH * 2)))
+    if(bot->HealthPoints > 0)
     {
-        TerminalCursorMoveXY(botX + BORDER_WIDTH, botY + BORDER_WIDTH);
-        TerminalSetBgColor(COLOR_BOT_BG);
-        TerminalSetFgColor(COLOR_BOT_FG);
-        UartTransmitByte(BOT_CHAR);
+        int16_t botX = bot->Position.X - viewPosition.X;
+        int16_t botY = bot->Position.Y - viewPosition.Y;
+        
+        if(botX >= 0 && botX < (windowSize.Width - (BORDER_WIDTH * 2))
+            && botY >= 0 && botY < (windowSize.Height - (BORDER_WIDTH * 2)))
+        {
+            TerminalCursorMoveXY(botX + BORDER_WIDTH, botY + BORDER_WIDTH);
+            TerminalSetBgColor(COLOR_BOT_BG);
+            TerminalSetFgColor(COLOR_BOT_FG);
+            UartTransmitByte(BOT_CHAR);
+        }
+    }
+}
+
+void GameRenderTower(const Tower_t *tower)
+{
+    uint8_t towerX = tower->Position.X - viewPosition.X;
+    uint8_t towerY = tower->Position.Y - viewPosition.Y;
+
+    TerminalCursorMoveXY(towerX + BORDER_WIDTH, towerY + BORDER_WIDTH);
+    TerminalSetBgColor(COLOR_TOWER_BG);
+    TerminalSetFgColor(COLOR_TOWER_FG);
+    UartTransmitByte(tower->Level + '0');
+}
+
+void GameRenderTowers()
+{
+    for(uint8_t i = 0; i < towerCount; i++)
+    {
+        int16_t towerX = towers[i].Position.X - viewPosition.X;
+        int16_t towerY = towers[i].Position.Y - viewPosition.Y;
+
+        if(towerX >= 0
+            && towerX < windowSize.Width - (2 * BORDER_WIDTH)
+            && towerY >= 0
+            && towerY < windowSize.Height - (2 * BORDER_WIDTH))
+        {
+            GameRenderTower(&towers[i]);
+        }
     }
 }
 
@@ -302,13 +445,19 @@ void GameRenderBase()
 
 void GameRenderBorders()
 {
-    TerminalCursorMoveXY(4, 0);
     TerminalSetBgColor(COLOR_BORDER);
     TerminalSetFgColor(TermColor_FFFFFF);
+    TerminalCursorMoveXY(0, 0);
+    TerminalInsertSpaces(windowSize.Width);
+    TerminalCursorMoveXY(BORDER_PAD, 0);
 
-    char buf[17];
-    sprintf(buf, "Gold: %ld", gold);
+    char buf[20];
+    sprintf(buf, "Gold %ld  ", gold);
     UartPrint(buf, strlen(buf));
+
+    sprintf(buf, "Level %u  ", level + 1);
+    UartPrint(buf, strlen(buf));
+    
 }
 
 void GameRenderCursor()
@@ -346,6 +495,45 @@ void GameRenderCursor()
     
     TerminalCursorMoveXY(cursorX, cursorY);
     TerminalCursorShow();
+}
+
+void GameClearStatus()
+{
+    TerminalSetBgColor(COLOR_BORDER);
+    TerminalSetFgColor(TermColor_FFFFFF);
+    TerminalCursorMoveXY(0, windowSize.Height - 1);
+    TerminalInsertSpaces(windowSize.Width);
+}
+
+/*
+ * Renders a status message onto the bottom of the window
+ */
+void GameRenderStatusP(const char *status)
+{
+    GameClearStatus();
+
+    uint8_t length = strlen_P(status);
+    if(length > (windowSize.Width - (BORDER_PAD * 2)))
+    {
+        length = windowSize.Width - (BORDER_PAD * 2);
+    }
+    
+    TerminalCursorMoveXY(BORDER_PAD, windowSize.Height - 1);
+    UartPrintP(status, length);
+}
+
+void GameRenderStatus(const char *status)
+{
+    GameClearStatus();
+    
+    uint8_t length = strlen(status);
+    if(length > (windowSize.Width - (BORDER_PAD * 2)))
+    {
+        length = windowSize.Width - (BORDER_PAD * 2);
+    }
+    
+    TerminalCursorMoveXY(BORDER_PAD, windowSize.Height - 1);
+    UartPrint(status, length);
 }
 
 /*
@@ -430,6 +618,23 @@ void GameParseInput()
         {
             cursorPosition.X =
                 (cursorPosition.X == 0) ? 0 : cursorPosition.X - 1;
+        }
+        // Build button
+        else if(b == 'b' && csCount == 0)
+        {
+            GameNewTower();
+        }
+        // Inspect button
+        else if(b == ' ' && csCount == 0)
+        {
+            Bot_t *bot = GameBotByPoint(cursorPosition);
+
+            if(bot)
+            {
+                char buf[5];
+                sprintf(buf, "%uHP", bot->HealthPoints);
+                GameRenderStatus(buf);
+            }
         }
         // Begin processing the size of the terminal window
         else if(b == '8' && csCount == 2)
@@ -580,37 +785,59 @@ VisitedPoint_t *VisitedPointByPointWeight(const Point_t *p,
  */
 void GameStep()
 {
-    if(!GameSimpleMove(&bots[botStep]))
+    // One bot is executed per game step.
+    static uint8_t i = 0;
+    
+    for(uint8_t j = 0; j < towerCount && i == 0; j++)
     {
-        if(!GameComplexMove(&bots[botStep]))
+        uint8_t d = BOT_ATTACK_DISTANCE;
+        bool botInRange = FALSE;
+        uint8_t botIndex = 0;
+        
+        for(uint8_t k = 0; k < botCount; k++)
         {
-            if(bots[botStep].FloodAttempts >= MAX_FLOOD_ATTEMPTS)
+            if(bots[k].HealthPoints > 0
+                &&PointDistance(towers[j].Position, bots[k].Position) < d)
             {
-                uint16_t distance = PointShortestAxis(
-                    bots[botStep].Position, basePosition);
+                botIndex = k;
+                botInRange = TRUE;
+            }
+        }
+
+        if(botInRange)
+        {
+            GameAttackBot(botIndex, GameTowerAttackDamage(&towers[j]));
+        }
+    }
+    
+    if(!GameSimpleMove(&bots[i]))
+    {
+        if(!GameComplexMove(&bots[i]))
+        {
+            if(bots[i].FloodAttempts++ >= MAX_FLOOD_ATTEMPTS)
+            {
+                uint16_t distance = PointLongestAxis(
+                    bots[i].Position, basePosition);
                 
                 if(distance >= BOT_ATTACK_DISTANCE)
                 {
-                    GameRandomizeBot(&bots[botStep]);
+                    GameRandomizeBot(&bots[i]);
                 }
-            }
-            else
-            {
-                bots[botStep].FloodAttempts++;
+                else
+                {
+                    bots[i].FloodAttempts = MAX_FLOOD_ATTEMPTS;
+                }
             }
         }
     }
     
-    botStep++;
-    botStep %= botCount;
+    i++;
+    i %= botCount;
     
     // Place bots if required
     for(uint8_t i = 0; i < ENTRY_POINT_COUNT && botCount < MAX_BOTS; i++)
     {
-        if(!GameBotAtLocation(&entryPoints[i]))
-        {
-            GameNewBot(&entryPoints[i]);
-        }
+        GameNewBot(entryPoints[i]);
     }
 
     GameRenderCursor();
@@ -724,10 +951,11 @@ bool GameComplexMove(Bot_t *bot)
         {
             VisitedPoint_t *visitedPoint = &visitedPoints[i];
             Point_t p = visitedPoint->Position;
-            
+
             if(PointAddDirection(&p, Direction_North)
-                && GameGetTile(&p) != Tile_Stone
-                && !VisitedPointByPoint(&p))
+                && GameGetTile(p) != Tile_Stone
+                && !VisitedPointByPoint(&p)
+                && !GameTowerByPoint(p))
             {
                 VisitedPoint_t *storedPoint = VisitedPointStore(&p,
                     visitedPoint->Weight + 1);
@@ -748,8 +976,9 @@ bool GameComplexMove(Bot_t *bot)
             
             if(PointAddDirection(&p, Direction_East)
                 && p.X < MAP_WIDTH
-                && GameGetTile(&p) != Tile_Stone
-                && !VisitedPointByPoint(&p))
+                && GameGetTile(p) != Tile_Stone
+                && !VisitedPointByPoint(&p)
+                && !GameTowerByPoint(p))
             {
                 VisitedPoint_t *storedPoint = VisitedPointStore(&p,
                     visitedPoint->Weight + 1);
@@ -770,8 +999,9 @@ bool GameComplexMove(Bot_t *bot)
             
             if(PointAddDirection(&p, Direction_South)
                 && p.Y < MAP_HEIGHT
-                && GameGetTile(&p) != Tile_Stone
-                && !VisitedPointByPoint(&p))
+                && GameGetTile(p) != Tile_Stone
+                && !VisitedPointByPoint(&p)
+                && !GameTowerByPoint(p))
             {
                 VisitedPoint_t *storedPoint = VisitedPointStore(&p,
                     visitedPoint->Weight + 1);
@@ -791,8 +1021,9 @@ bool GameComplexMove(Bot_t *bot)
             p = visitedPoint->Position;
             
             if(PointAddDirection(&p, Direction_West)
-                && GameGetTile(&p) != Tile_Stone
-                && !VisitedPointByPoint(&p))
+                && GameGetTile(p) != Tile_Stone
+                && !VisitedPointByPoint(&p)
+                && !GameTowerByPoint(p))
             {
                 VisitedPoint_t *storedPoint = VisitedPointStore(&p,
                     visitedPoint->Weight + 1);
@@ -819,7 +1050,7 @@ bool GameComplexMove(Bot_t *bot)
 
         if(destinationPoint != NULL)
         {
-            GameRenderTilePosition(&bot->Position);
+            GameRenderTilePosition(bot->Position);
             bot->Position = destinationPoint->Position;
             GameRenderBot(bot);
             bot->FloodAttempts = 0;
@@ -856,20 +1087,14 @@ void GameRandomizeBot(Bot_t *bot)
         Point_t p = { .X = randX,
                       .Y = randY };
         
-        if(PointsEqual(p, basePosition))
-        {
-            continue;
-        }
-        else if(GameGetTile(&p) == Tile_Stone)
-        {
-            continue;
-        }
-        else if(GameBotAtLocation(&p))
+        if(PointsEqual(p, basePosition)
+            || GameGetTile(p) == Tile_Stone
+            || GameBotByPoint(p))
         {
             continue;
         }
         
-        GameRenderTilePosition(&bot->Position);
+        GameRenderTilePosition(bot->Position);
         bot->Position = p;
         GameRenderBot(bot);
         bot->FloodAttempts = 0;
@@ -880,15 +1105,11 @@ void GameRandomizeBot(Bot_t *bot)
 bool GameMoveBot(Bot_t *bot, Direction_t direction)
 {
     Point_t pTest = bot->Position;
-    if(!PointAddDirection(&pTest, direction))
-    {
-        return FALSE;
-    }
-    else if(pTest.X >= MAP_WIDTH || pTest.Y >= MAP_HEIGHT)
-    {
-        return FALSE;
-    }
-    else if(GameGetTile(&pTest) == Tile_Stone)
+    if(!PointAddDirection(&pTest, direction)
+        || pTest.X >= MAP_WIDTH
+        || pTest.Y >= MAP_HEIGHT
+        || GameGetTile(pTest) == Tile_Stone
+        || GameTowerByPoint(pTest))
     {
         return FALSE;
     }
@@ -896,13 +1117,13 @@ bool GameMoveBot(Bot_t *bot, Direction_t direction)
     {
         return TRUE;
     }
-    else if(GameBotAtLocation(&pTest))
+    else if(GameBotByPoint(pTest))
     {
         return (bot->FloodAttempts >= MAX_FLOOD_ATTEMPTS);
     }
     else
     {
-        GameRenderTilePosition(&bot->Position);
+        GameRenderTilePosition(bot->Position);
         PointAddDirection(&bot->Position, direction);
         GameRenderBot(bot);
         return TRUE;

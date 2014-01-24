@@ -24,7 +24,7 @@ C_FLAGS = -Wall -mmcu=$(MCU) -$(OPT) -DF_CPU=$(F_CPU) -std=c99 -fshort-enums
 CC = avr-gcc
 
 # Programming
-PORT = /dev/ttyUSB0
+PORT = /dev/ttyACM0
 PROGRAMMER = arduino
 
 # Targets ######################################################################

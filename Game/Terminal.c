@@ -137,3 +137,12 @@ void TerminalSetBgColor(TermColor_t color)
         prevColor = color;
     }
 }
+
+void TerminalInsertSpaces(uint8_t count)
+{
+    UartPrintP(CS_CCI, 2);
+    
+    char buf[5];
+    sprintf(buf, "%u@", count);
+    UartPrint(buf, strlen(buf));
+}
